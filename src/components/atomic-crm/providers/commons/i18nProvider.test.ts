@@ -6,11 +6,18 @@ afterEach(() => {
 });
 
 describe("i18nProvider", () => {
-  it("registers en and fr locales", () => {
+  it("registers da, en and fr locales", () => {
     expect(i18nProvider.getLocales?.()).toEqual([
+      { locale: "da", name: "Dansk" },
       { locale: "en", name: "English" },
       { locale: "fr", name: "Français" },
     ]);
+  });
+
+  it("translates the language key in danish", async () => {
+    await i18nProvider.changeLocale("da");
+
+    expect(i18nProvider.translate("crm.language")).toBe("Sprog");
   });
 
   it("translates the language key in french", async () => {
@@ -19,13 +26,18 @@ describe("i18nProvider", () => {
     expect(i18nProvider.translate("crm.language")).toBe("Langue");
   });
 
-  it("falls back to english for unknown locales", async () => {
+  it("falls back to danish for unknown locales", async () => {
     await i18nProvider.changeLocale("es");
 
-    expect(i18nProvider.translate("crm.language")).toBe("Language");
+    expect(i18nProvider.translate("crm.language")).toBe("Sprog");
   });
 
-  it("uses customized password reset overrides for en and fr", async () => {
+  it("uses customized password reset overrides for da, en and fr", async () => {
+    await i18nProvider.changeLocale("da");
+    expect(i18nProvider.translate("ra-supabase.auth.password_reset")).toBe(
+      "Tjek din mail for en besked om nulstilling af adgangskoden.",
+    );
+
     await i18nProvider.changeLocale("en");
     expect(i18nProvider.translate("ra-supabase.auth.password_reset")).toBe(
       "Check your emails for a Reset Password message.",
@@ -54,12 +66,21 @@ describe("i18nProvider", () => {
     expect(getInitialLocale()).toBe("fr");
   });
 
-  it("falls back to english when browser locale is unsupported", () => {
+  it("uses browser english locale when available", () => {
+    vi.stubGlobal("navigator", {
+      language: "en-US",
+      languages: ["en-US", "en-GB"],
+    });
+
+    expect(getInitialLocale()).toBe("en");
+  });
+
+  it("falls back to danish when browser locale is unsupported", () => {
     vi.stubGlobal("navigator", {
       language: "es-ES",
       languages: ["es-ES", "pt-BR"],
     });
 
-    expect(getInitialLocale()).toBe("en");
+    expect(getInitialLocale()).toBe("da");
   });
 });
