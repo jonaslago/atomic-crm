@@ -172,3 +172,8 @@ verify_jwt = false
 verify_jwt = false
 [functions.mcp]
 verify_jwt = false
+# LAGO: ai-adapter Edge Function. verify_jwt=false because the function itself
+# best-effort decodes the JWT (if present) to log user_id; calls without auth
+# are allowed and logged with user_id=null. See lago/DIVERGENCE.md.
+[functions.ai-adapter]
+verify_jwt = false

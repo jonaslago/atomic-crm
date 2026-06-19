@@ -30,4 +30,14 @@ unavoidable and **what to re-check** when pulling a fresh upstream.
 - **Re-check on upstream merge:** if upstream adds new mandatory `<CRM>`
   props, mirror them here.
 
-*(No other core-file divergences as of fork creation 2026-06-19.)*
+### `supabase/config.toml`
+
+- **Type:** additive — new `[functions.ai-adapter]` block appended after
+  upstream's per-function configs.
+- **Why:** Per-function `verify_jwt` is the only place this can be configured.
+  Adding a new block is additive (no merge conflict unless upstream itself
+  ships an `ai-adapter` function, which they will not).
+- **Re-check on upstream merge:** if upstream adds more per-function blocks
+  near the end of the file, ensure our `[functions.ai-adapter]` block stays
+  intact and after them.
+
