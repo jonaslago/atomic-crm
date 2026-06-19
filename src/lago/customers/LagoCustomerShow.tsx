@@ -30,6 +30,8 @@ import {
 
 import { fetchLagoCustomer, upsertLagoExtension } from "./dataAccess";
 import { ownershipOf } from "./fieldOwnership";
+import { QuickNoteForm } from "./QuickNoteForm";
+import { QuickTaskForm } from "./QuickTaskForm";
 import type {
   ContactSummary,
   LagoCustomerData,
@@ -279,36 +281,43 @@ function LastVisitSection({
   );
 }
 
-function OpenTasksSection({ tasks }: { tasks: OpenTask[] }) {
+function OpenTasksSection({
+  tasks,
+  primaryContact,
+  invalidateKey,
+}: {
+  tasks: OpenTask[];
+  primaryContact: ContactSummary | undefined;
+  invalidateKey: ReadonlyArray<unknown>;
+}) {
   const translate = useTranslate();
-  if (tasks.length === 0) {
-    return (
-      <SectionCard
-        title={translate("lago.customer.sections.open_followups")}
-        icon={<Sparkles className="h-4 w-4" />}
-      >
+  const title =
+    tasks.length === 0
+      ? translate("lago.customer.sections.open_followups")
+      : `${translate("lago.customer.sections.open_followups")} (${tasks.length})`;
+  return (
+    <SectionCard title={title} icon={<Sparkles className="h-4 w-4" />}>
+      <QuickTaskForm
+        primaryContact={primaryContact}
+        invalidateKey={invalidateKey}
+      />
+      {tasks.length === 0 ? (
         <p className="text-muted-foreground py-2 text-sm">
           {translate("lago.customer.empty.no_open_tasks")}
         </p>
-      </SectionCard>
-    );
-  }
-  return (
-    <SectionCard
-      title={`${translate("lago.customer.sections.open_followups")} (${tasks.length})`}
-      icon={<Sparkles className="h-4 w-4" />}
-    >
-      <ul className="space-y-2">
-        {tasks.map((t) => (
-          <li key={t.id} className="border-b pb-2 last:border-b-0 last:pb-0">
-            <div className="text-sm font-medium">{t.text}</div>
-            <div className="text-muted-foreground text-xs">
-              {t.due_date ? formatDate(t.due_date) : "—"}
-              {t.type && <span className="ml-2">· {t.type}</span>}
-            </div>
-          </li>
-        ))}
-      </ul>
+      ) : (
+        <ul className="space-y-2">
+          {tasks.map((t) => (
+            <li key={t.id} className="border-b pb-2 last:border-b-0 last:pb-0">
+              <div className="text-sm font-medium">{t.text}</div>
+              <div className="text-muted-foreground text-xs">
+                {t.due_date ? formatDate(t.due_date) : "—"}
+                {t.type && <span className="ml-2">· {t.type}</span>}
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
     </SectionCard>
   );
 }
@@ -368,35 +377,41 @@ function ContactsSection({ contacts }: { contacts: ContactSummary[] }) {
   );
 }
 
-function NotesSection({ notes }: { notes: RecentNote[] }) {
+function NotesSection({
+  notes,
+  primaryContact,
+  invalidateKey,
+}: {
+  notes: RecentNote[];
+  primaryContact: ContactSummary | undefined;
+  invalidateKey: ReadonlyArray<unknown>;
+}) {
   const translate = useTranslate();
-  if (notes.length === 0) {
-    return (
-      <SectionCard
-        title={translate("lago.customer.sections.recent_notes")}
-        icon={<StickyNote className="h-4 w-4" />}
-      >
-        <p className="text-muted-foreground py-2 text-sm">
-          {translate("lago.customer.empty.no_notes")}
-        </p>
-      </SectionCard>
-    );
-  }
   return (
     <SectionCard
       title={translate("lago.customer.sections.recent_notes")}
       icon={<StickyNote className="h-4 w-4" />}
     >
-      <ul className="space-y-3">
-        {notes.map((n) => (
-          <li key={n.id} className="border-b pb-3 last:border-b-0 last:pb-0">
-            <div className="text-muted-foreground text-xs">
-              {formatDate(n.date)}
-            </div>
-            <div className="text-sm whitespace-pre-wrap">{n.text}</div>
-          </li>
-        ))}
-      </ul>
+      <QuickNoteForm
+        primaryContact={primaryContact}
+        invalidateKey={invalidateKey}
+      />
+      {notes.length === 0 ? (
+        <p className="text-muted-foreground py-2 text-sm">
+          {translate("lago.customer.empty.no_notes")}
+        </p>
+      ) : (
+        <ul className="space-y-3">
+          {notes.map((n) => (
+            <li key={n.id} className="border-b pb-3 last:border-b-0 last:pb-0">
+              <div className="text-muted-foreground text-xs">
+                {formatDate(n.date)}
+              </div>
+              <div className="text-sm whitespace-pre-wrap">{n.text}</div>
+            </li>
+          ))}
+        </ul>
+      )}
     </SectionCard>
   );
 }
@@ -557,6 +572,8 @@ export function LagoCustomerShow() {
   }
 
   const data = query.data;
+  const primaryContact = data.contacts[0];
+  const invalidateKey: ReadonlyArray<unknown> = ["lago-customer", companyId];
 
   return (
     <div className="max-w-3xl">
@@ -568,9 +585,17 @@ export function LagoCustomerShow() {
           onUpdate={mutation.mutate}
           saving={mutation.isPending}
         />
-        <OpenTasksSection tasks={data.openTasks} />
+        <OpenTasksSection
+          tasks={data.openTasks}
+          primaryContact={primaryContact}
+          invalidateKey={invalidateKey}
+        />
         <ContactsSection contacts={data.contacts} />
-        <NotesSection notes={data.recentNotes} />
+        <NotesSection
+          notes={data.recentNotes}
+          primaryContact={primaryContact}
+          invalidateKey={invalidateKey}
+        />
         <CrmFieldsSection
           data={data}
           onUpdate={mutation.mutate}

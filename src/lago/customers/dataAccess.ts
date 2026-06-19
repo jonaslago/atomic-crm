@@ -83,6 +83,45 @@ export async function fetchLagoCustomer(
   };
 }
 
+export interface CreateContactNoteInput {
+  contact_id: number;
+  text: string;
+  sales_id?: number | null;
+}
+
+export async function createContactNote(
+  input: CreateContactNoteInput,
+): Promise<void> {
+  const supabase = getSupabaseClient();
+  const { error } = await supabase.from("contact_notes").insert({
+    contact_id: input.contact_id,
+    text: input.text,
+    sales_id: input.sales_id ?? null,
+    date: new Date().toISOString(),
+  });
+  if (error) throw error;
+}
+
+export interface CreateTaskInput {
+  contact_id: number;
+  text: string;
+  due_date: string;
+  type?: string | null;
+  sales_id?: number | null;
+}
+
+export async function createTask(input: CreateTaskInput): Promise<void> {
+  const supabase = getSupabaseClient();
+  const { error } = await supabase.from("tasks").insert({
+    contact_id: input.contact_id,
+    text: input.text,
+    due_date: input.due_date,
+    type: input.type ?? null,
+    sales_id: input.sales_id ?? null,
+  });
+  if (error) throw error;
+}
+
 export async function upsertLagoExtension(
   input: SaveExtensionInput,
 ): Promise<CompanyLagoExtension> {

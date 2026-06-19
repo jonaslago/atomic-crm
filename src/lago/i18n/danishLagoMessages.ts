@@ -45,6 +45,23 @@ export const danishLagoMessages = {
         bad_id: "Ugyldigt kunde-ID i URL'en.",
         load_failed: "Kunne ikke hente kunden.",
       },
+      quick_note: {
+        label: "Hurtig-notat på %{name}",
+        placeholder: "Hvad skete der i mødet? (gemmes med det samme)",
+        submit: "Gem notat",
+        save_failed: "Kunne ikke gemme notatet — prøv igen.",
+        needs_contact:
+          "Tilføj først en kontaktperson på kunden — så kan du notere herfra.",
+      },
+      quick_task: {
+        label: "Hvad er næste skridt?",
+        placeholder: "fx Følge op på vareprøve",
+        due_date: "Forfald",
+        submit: "Tilføj opfølgning",
+        save_failed: "Kunne ikke gemme opfølgningen — prøv igen.",
+        needs_contact:
+          "Tilføj først en kontaktperson på kunden — så kan du planlægge opfølgning herfra.",
+      },
     },
   },
 } as const;
