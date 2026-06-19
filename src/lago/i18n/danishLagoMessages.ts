@@ -66,12 +66,9 @@ export const danishLagoMessages = {
         about_contact: "om %{name}",
       },
     },
-    dashboard: {
-      latest_notes_title: "Mine seneste notater",
-      loading: "Henter notater...",
-      load_failed: "Kunne ikke hente notater.",
-      no_notes_yet: "Du har ikke skrevet nogen notater endnu.",
-      unknown_company: "Ukendt kunde",
+    activity: {
+      added_company_note: "%{name} skrev et notat på",
+      you_added_company_note: "Du skrev et notat på",
     },
   },
 } as const;
