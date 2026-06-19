@@ -1,6 +1,7 @@
 import { useGetList } from "ra-core";
 
 import { useIsMobile } from "@/hooks/use-mobile";
+import { DashboardActivityLog } from "@/components/atomic-crm/dashboard/DashboardActivityLog";
 import { DashboardStepper } from "@/components/atomic-crm/dashboard/DashboardStepper";
 import { DealsChart } from "@/components/atomic-crm/dashboard/DealsChart";
 import { HotContacts } from "@/components/atomic-crm/dashboard/HotContacts";
@@ -18,11 +19,12 @@ interface LagoNoteRow {
 }
 
 /**
- * LAGO dashboard — wraps upstream's Welcome/HotContacts/DealsChart/
- * TasksList layout but replaces the "Latest Activity"-style widget with
- * LagoLatestNotesPanel, which is the only widget that surfaces our
- * company-level notes (upstream's activity_log view doesn't know about
- * public.company_notes_lago).
+ * LAGO dashboard — keeps upstream's full Welcome/HotContacts/DealsChart/
+ * DashboardActivityLog/TasksList layout (kept so we get the colored
+ * category icons and "who did what" attribution upstream's activity log
+ * has), then adds LagoLatestNotesPanel as a supplemental widget so our
+ * own company_notes_lago entries — which upstream's activity_log view
+ * does not know about — are still visible on the dashboard.
  *
  * Stepper is bypassed once the user has notes EITHER in upstream's
  * contact_notes OR in our company_notes_lago, so the onboarding wizard
@@ -78,6 +80,7 @@ export function LagoDashboard() {
       <MobileWrapper>
         <div className="grid grid-cols-1 gap-6 mt-1">
           {import.meta.env.VITE_IS_DEMO === "true" ? <Welcome /> : null}
+          <DashboardActivityLog />
           <LagoLatestNotesPanel limit={5} />
         </div>
       </MobileWrapper>
@@ -95,7 +98,8 @@ export function LagoDashboard() {
       <div className="md:col-span-6">
         <div className="flex flex-col gap-6">
           {totalDeal ? <DealsChart /> : null}
-          <LagoLatestNotesPanel limit={6} />
+          <DashboardActivityLog />
+          <LagoLatestNotesPanel limit={5} />
         </div>
       </div>
       <div className="md:col-span-3">
