@@ -1,4 +1,4 @@
-import type { PartialCrmMessages } from "./englishCrmMessages";
+import type { PartialCrmMessages } from "@/components/atomic-crm/providers/commons/englishCrmMessages";
 
 // Danish translations for the LAGO CRM shell (navigation, settings, auth,
 // common labels). Domain-specific field labels intentionally fall back to

@@ -1,4 +1,5 @@
 import { CRM } from "@/components/atomic-crm/root/CRM";
+import { lagoI18nProvider } from "@/lago/i18n/lagoI18nProvider";
 
 /**
  * Application entry point
@@ -24,6 +25,6 @@ import { CRM } from "@/components/atomic-crm/root/CRM";
  *    />
  * );
  */
-const App = () => <CRM disableTelemetry />;
+const App = () => <CRM disableTelemetry i18nProvider={lagoI18nProvider} />;
 
 export default App;
