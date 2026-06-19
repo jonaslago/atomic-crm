@@ -1,7 +1,9 @@
 import { CRM } from "@/components/atomic-crm/root/CRM";
+import { LagoCustomerList } from "@/lago/customers/LagoCustomerList";
 import { LagoCustomerShow } from "@/lago/customers/LagoCustomerShow";
 import { LagoDashboard } from "@/lago/dashboard/LagoDashboard";
 import { lagoI18nProvider } from "@/lago/i18n/lagoI18nProvider";
+import { LagoPwaAutoUpdate } from "@/lago/pwa/LagoPwaAutoUpdate";
 
 /**
  * Application entry point
@@ -28,12 +30,16 @@ import { lagoI18nProvider } from "@/lago/i18n/lagoI18nProvider";
  * );
  */
 const App = () => (
-  <CRM
-    disableTelemetry
-    i18nProvider={lagoI18nProvider}
-    companyShow={LagoCustomerShow}
-    dashboard={LagoDashboard}
-  />
+  <>
+    <LagoPwaAutoUpdate />
+    <CRM
+      disableTelemetry
+      i18nProvider={lagoI18nProvider}
+      companyShow={LagoCustomerShow}
+      companyList={LagoCustomerList}
+      dashboard={LagoDashboard}
+    />
+  </>
 );
 
 export default App;

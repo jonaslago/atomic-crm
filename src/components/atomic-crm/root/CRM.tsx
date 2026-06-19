@@ -76,6 +76,11 @@ export type CRMProps = {
    * use it instead of upstream's default CompanyShow.
    */
   companyShow?: ComponentType;
+  /**
+   * LAGO addition: optional override for the `companies` resource list
+   * component, same pattern as `companyShow`.
+   */
+  companyList?: ComponentType;
 } & Partial<ConfigurationContextValue>;
 
 /**
@@ -138,6 +143,7 @@ export const CRM = ({
     .VITE_DISABLE_EMAIL_PASSWORD_AUTHENTICATION === "true",
   disableTelemetry,
   companyShow,
+  companyList,
   ...rest
 }: CRMProps) => {
   useEffect(() => {
@@ -236,6 +242,7 @@ export const CRM = ({
       requireAuth
       disableTelemetry
       companyShow={companyShow}
+      companyList={companyList}
       {...rest}
     />
   );
@@ -246,6 +253,7 @@ const DesktopAdmin = (
     dashboard?: DashboardComponent;
     layout?: LayoutComponent;
     companyShow?: ComponentType;
+    companyList?: ComponentType;
   },
 ) => {
   return (
@@ -279,6 +287,7 @@ const DesktopAdmin = (
       <Resource
         name="companies"
         {...companies}
+        list={props.companyList ?? companies.list}
         show={props.companyShow ?? companies.show}
       />
       <Resource name="contact_notes" />
@@ -295,6 +304,7 @@ const MobileAdmin = (
     dashboard?: DashboardComponent;
     layout?: LayoutComponent;
     companyShow?: ComponentType;
+    companyList?: ComponentType;
   },
 ) => {
   const queryClient = new QueryClient({
@@ -351,7 +361,11 @@ const MobileAdmin = (
         >
           <Route path=":id/notes/:noteId" element={<NoteShowPage />} />
         </Resource>
-        <Resource name="companies" show={props.companyShow ?? CompanyShow} />
+        <Resource
+          name="companies"
+          list={props.companyList}
+          show={props.companyShow ?? CompanyShow}
+        />
         <Resource name="tasks" list={MobileTasksList} />
       </Admin>
     </PersistQueryClientProvider>

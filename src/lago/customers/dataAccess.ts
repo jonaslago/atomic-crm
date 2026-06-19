@@ -117,6 +117,65 @@ export async function createTask(input: CreateTaskInput): Promise<void> {
   if (error) throw error;
 }
 
+export interface CustomerListRow {
+  id: number;
+  name: string;
+  sales_id: number | null;
+  city: string | null;
+  sector: string | null;
+  extension: {
+    visma_customer_no: string | null;
+    segment: "A" | "B" | "C" | null;
+    last_visit_at: string | null;
+  } | null;
+}
+
+/**
+ * Read every company + its LAGO extension in a single embedded query so the
+ * sælger-kundeliste can compute priority client-side. Filtering by sales_id
+ * happens server-side when "mine kunder" is on.
+ */
+export async function fetchCustomerList(opts: {
+  mySalesId?: number | null;
+  onlyMine?: boolean;
+}): Promise<CustomerListRow[]> {
+  const supabase = getSupabaseClient();
+  let q = supabase
+    .from("companies")
+    .select(
+      "id, name, sales_id, city, sector, extension:companies_lago(visma_customer_no, segment, last_visit_at)",
+    )
+    .order("name", { ascending: true })
+    .limit(500);
+
+  if (opts.onlyMine && typeof opts.mySalesId === "number") {
+    q = q.eq("sales_id", opts.mySalesId);
+  }
+
+  const { data, error } = await q;
+  if (error) throw error;
+
+  return (data ?? []).map((row: any) => {
+    const rawExt = Array.isArray(row.extension)
+      ? row.extension[0]
+      : row.extension;
+    return {
+      id: row.id as number,
+      name: row.name as string,
+      sales_id: row.sales_id ?? null,
+      city: row.city ?? null,
+      sector: row.sector ?? null,
+      extension: rawExt
+        ? {
+            visma_customer_no: rawExt.visma_customer_no ?? null,
+            segment: rawExt.segment ?? null,
+            last_visit_at: rawExt.last_visit_at ?? null,
+          }
+        : null,
+    };
+  });
+}
+
 export async function upsertLagoExtension(
   input: SaveExtensionInput,
 ): Promise<CompanyLagoExtension> {
