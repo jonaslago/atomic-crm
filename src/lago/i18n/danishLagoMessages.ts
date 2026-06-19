@@ -53,9 +53,6 @@ export const danishLagoMessages = {
         contact_label: "Om kontakt (valgfrit)",
         contact_none: "— ikke en specifik person —",
       },
-      note: {
-        about_contact: "om %{name}",
-      },
       quick_task: {
         label: "Hvad er næste skridt?",
         placeholder: "fx Følge op på vareprøve",
@@ -65,6 +62,16 @@ export const danishLagoMessages = {
         needs_contact:
           "Tilføj først en kontaktperson på kunden — så kan du planlægge opfølgning herfra.",
       },
+      note: {
+        about_contact: "om %{name}",
+      },
+    },
+    dashboard: {
+      latest_notes_title: "Mine seneste notater",
+      loading: "Henter notater...",
+      load_failed: "Kunne ikke hente notater.",
+      no_notes_yet: "Du har ikke skrevet nogen notater endnu.",
+      unknown_company: "Ukendt kunde",
     },
   },
 } as const;

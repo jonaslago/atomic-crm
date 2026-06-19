@@ -1,5 +1,6 @@
 import { CRM } from "@/components/atomic-crm/root/CRM";
 import { LagoCustomerShow } from "@/lago/customers/LagoCustomerShow";
+import { LagoDashboard } from "@/lago/dashboard/LagoDashboard";
 import { lagoI18nProvider } from "@/lago/i18n/lagoI18nProvider";
 
 /**
@@ -31,6 +32,7 @@ const App = () => (
     disableTelemetry
     i18nProvider={lagoI18nProvider}
     companyShow={LagoCustomerShow}
+    dashboard={LagoDashboard}
   />
 );
 
