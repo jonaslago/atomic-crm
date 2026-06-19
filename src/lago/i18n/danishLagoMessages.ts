@@ -71,10 +71,11 @@ export const danishLagoMessages = {
       you_added_company_note: "Du skrev et notat på",
     },
     customer_list: {
-      title: "Mine kunder — trænger til besøg?",
+      title: "Virksomheder",
       loading: "Henter kunder...",
       load_failed: "Kunne ikke hente kunder.",
       empty: "Ingen kunder matcher dine filtre.",
+      search_placeholder: "Søg på navn...",
       filter_overdue: "Kun overskredne",
       filter_mine: "Mine kunder",
       summary:
@@ -82,6 +83,10 @@ export const danishLagoMessages = {
       last_visit_n_days_ago: "Sidst besøgt for %{n} dage siden",
       never_visited: "Aldrig besøgt",
       interval_n_days: "interval: hver %{n}. dag",
+      sort: {
+        name: "Sortér: Navn (A-Å)",
+        priority: "Sortér: Trænger til besøg",
+      },
       status: {
         never_visited: "Aldrig besøgt",
         overdue_by_n: "Overskredet med 1 dag |||| Overskredet med %{n} dage",

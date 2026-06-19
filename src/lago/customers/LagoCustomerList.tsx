@@ -1,12 +1,20 @@
-import { useMemo, useState } from "react";
+import { useDeferredValue, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
-import { Loader2, MapPin, Users } from "lucide-react";
+import { Loader2, MapPin, Search } from "lucide-react";
 import { useGetIdentity, useTranslate } from "ra-core";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 
 import { fetchCustomerList, type CustomerListRow } from "./dataAccess";
@@ -18,11 +26,13 @@ import {
 } from "./priority";
 import { SEGMENT_INTERVAL_DAYS, type Segment } from "./segmentIntervals";
 
+type SortMode = "name" | "priority";
+
+const SEGMENTS: Segment[] = ["A", "B", "C"];
+
 interface EnrichedRow extends CustomerListRow {
   priority: VisitPriority;
 }
-
-const SEGMENTS: Segment[] = ["A", "B", "C"];
 
 function statusDotClass(status: VisitStatus): string {
   switch (status) {
@@ -50,35 +60,7 @@ function statusBadgeClass(status: VisitStatus): string {
   }
 }
 
-function StatusLine({
-  priority,
-  translate,
-}: {
-  priority: VisitPriority;
-  translate: ReturnType<typeof useTranslate>;
-}) {
-  if (priority.status === "never_visited") {
-    return (
-      <span>
-        {translate("lago.customer_list.never_visited")} ·{" "}
-        {translate("lago.customer_list.interval_n_days", {
-          n: priority.intervalDays,
-        })}
-      </span>
-    );
-  }
-  const days = priority.daysSinceVisit ?? 0;
-  return (
-    <span>
-      {translate("lago.customer_list.last_visit_n_days_ago", { n: days })} ·{" "}
-      {translate("lago.customer_list.interval_n_days", {
-        n: priority.intervalDays,
-      })}
-    </span>
-  );
-}
-
-function StatusBadge({
+function PriorityBadge({
   priority,
   translate,
 }: {
@@ -102,18 +84,30 @@ function StatusBadge({
       variant="outline"
       className={cn("font-normal", statusBadgeClass(priority.status))}
     >
-      <span
-        className={cn(
-          "mr-1.5 inline-block h-2 w-2 rounded-full",
-          statusDotClass(priority.status),
-        )}
-      />
       {label}
     </Badge>
   );
 }
 
-function CustomerRow({ row }: { row: EnrichedRow }) {
+function lastVisitFragment(
+  priority: VisitPriority,
+  translate: ReturnType<typeof useTranslate>,
+): string {
+  if (priority.status === "never_visited") {
+    return translate("lago.customer_list.never_visited");
+  }
+  return translate("lago.customer_list.last_visit_n_days_ago", {
+    n: priority.daysSinceVisit ?? 0,
+  });
+}
+
+function CustomerRow({
+  row,
+  emphasisePriority,
+}: {
+  row: EnrichedRow;
+  emphasisePriority: boolean;
+}) {
   const translate = useTranslate();
   const { name, city, extension, priority } = row;
   return (
@@ -122,38 +116,41 @@ function CustomerRow({ row }: { row: EnrichedRow }) {
       className="block focus-visible:outline-none"
     >
       <Card className="hover:bg-muted/40 active:bg-muted/60 transition-colors">
-        <CardContent className="flex items-start gap-3 py-3">
+        <CardContent className="flex items-center gap-3 py-3">
           <div
             className={cn(
-              "mt-1.5 h-2.5 w-2.5 flex-shrink-0 rounded-full",
+              "h-2 w-2 flex-shrink-0 rounded-full",
               statusDotClass(priority.status),
             )}
             aria-hidden
           />
           <div className="min-w-0 flex-1">
-            <div className="flex items-baseline justify-between gap-2">
+            <div className="flex items-baseline gap-2">
               <h3 className="truncate text-base font-semibold">{name}</h3>
               {extension?.segment && (
                 <Badge
                   variant="secondary"
                   className="flex-shrink-0 font-normal"
                 >
-                  {translate("lago.customer.segment")} {extension.segment}
+                  {extension.segment}
                 </Badge>
               )}
             </div>
-            {city && (
-              <p className="text-muted-foreground flex items-center gap-1 text-xs">
-                <MapPin className="h-3 w-3" /> {city}
-              </p>
-            )}
-            <p className="text-muted-foreground mt-1 text-xs">
-              <StatusLine priority={priority} translate={translate} />
+            <p className="text-muted-foreground mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs">
+              {city && (
+                <span className="inline-flex items-center gap-1">
+                  <MapPin className="h-3 w-3" /> {city}
+                </span>
+              )}
+              {city && <span aria-hidden>·</span>}
+              <span>{lastVisitFragment(priority, translate)}</span>
             </p>
-            <div className="mt-2">
-              <StatusBadge priority={priority} translate={translate} />
-            </div>
           </div>
+          {emphasisePriority && priority.status !== "on_plan" && (
+            <div className="flex-shrink-0">
+              <PriorityBadge priority={priority} translate={translate} />
+            </div>
+          )}
         </CardContent>
       </Card>
     </Link>
@@ -161,33 +158,32 @@ function CustomerRow({ row }: { row: EnrichedRow }) {
 }
 
 /**
- * Mobile-first prioritised customer list (Domain-brief 2). Reads companies
- * + companies_lago, computes a visit-priority per customer from segment +
- * last_visit_at + the segment-interval defaults, and sorts the most
- * urgent rows to the top. Filters are client-side; the dataset for LAGO
- * is small enough that this stays snappy on iPad.
+ * Browsable LAGO customer list (Domain-brief 2, post-revision).
+ * Default behaviour: alphabetical search + browse, enriched per row with
+ * segment, last-visit fragment, and a small visit-status dot. Filters and
+ * "trænger til besøg"-sort are available but not the frame.
  */
 export function LagoCustomerList() {
   const translate = useTranslate();
   const { data: identity } = useGetIdentity();
   const mySalesId = typeof identity?.id === "number" ? identity.id : null;
 
+  const [search, setSearch] = useState("");
+  const deferredSearch = useDeferredValue(search);
+  const [sortMode, setSortMode] = useState<SortMode>("name");
   const [activeSegments, setActiveSegments] = useState<Set<Segment>>(new Set());
   const [onlyOverdue, setOnlyOverdue] = useState(false);
   const [onlyMine, setOnlyMine] = useState(false);
 
   const query = useQuery({
     queryKey: ["lago-customer-list", { onlyMine, mySalesId }],
-    queryFn: () =>
-      fetchCustomerList({
-        mySalesId,
-        onlyMine,
-      }),
+    queryFn: () => fetchCustomerList({ mySalesId, onlyMine }),
   });
 
   const rows = useMemo<EnrichedRow[]>(() => {
     if (!query.data) return [];
-    const enriched = query.data.map((c) => ({
+    const needle = deferredSearch.trim().toLowerCase();
+    const enriched: EnrichedRow[] = query.data.map((c) => ({
       ...c,
       priority: computeVisitPriority(
         c.extension?.last_visit_at,
@@ -195,6 +191,7 @@ export function LagoCustomerList() {
       ),
     }));
     const filtered = enriched.filter((r) => {
+      if (needle && !r.name.toLowerCase().includes(needle)) return false;
       if (activeSegments.size > 0) {
         if (!r.extension?.segment) return false;
         if (!activeSegments.has(r.extension.segment as Segment)) return false;
@@ -209,8 +206,19 @@ export function LagoCustomerList() {
       }
       return true;
     });
-    return filtered.sort((a, b) => comparePriority(a.priority, b.priority));
-  }, [query.data, activeSegments, onlyOverdue]);
+    if (sortMode === "priority") {
+      return filtered.sort((a, b) => comparePriority(a.priority, b.priority));
+    }
+    return filtered.sort((a, b) =>
+      a.name.localeCompare(b.name, "da", { sensitivity: "base" }),
+    );
+  }, [query.data, deferredSearch, activeSegments, onlyOverdue, sortMode]);
+
+  const counts = useMemo(() => {
+    const c = { overdue: 0, soon: 0, on_plan: 0, never_visited: 0 };
+    for (const r of rows) c[r.priority.status]++;
+    return c;
+  }, [rows]);
 
   const toggleSegment = (s: Segment) => {
     setActiveSegments((prev) => {
@@ -221,27 +229,46 @@ export function LagoCustomerList() {
     });
   };
 
-  const counts = useMemo(() => {
-    const c = {
-      overdue: 0,
-      soon: 0,
-      on_plan: 0,
-      never_visited: 0,
-    };
-    for (const r of rows) c[r.priority.status]++;
-    return c;
-  }, [rows]);
+  const emphasisePriority = sortMode === "priority" || onlyOverdue;
 
   return (
     <div className="mx-auto max-w-3xl px-3 py-4 sm:px-4">
-      <header className="mb-3 flex items-center gap-2">
-        <Users className="text-muted-foreground h-5 w-5" />
+      <header className="mb-3">
         <h1 className="text-lg font-semibold">
           {translate("lago.customer_list.title")}
         </h1>
       </header>
 
-      <div className="mb-3 flex flex-wrap items-center gap-2">
+      <div className="mb-2 flex flex-col gap-2 sm:flex-row sm:items-center">
+        <div className="relative flex-1">
+          <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2" />
+          <Input
+            type="search"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder={translate("lago.customer_list.search_placeholder")}
+            className="pl-9"
+          />
+        </div>
+        <Select
+          value={sortMode}
+          onValueChange={(v) => setSortMode(v as SortMode)}
+        >
+          <SelectTrigger className="sm:w-[220px]">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="name">
+              {translate("lago.customer_list.sort.name")}
+            </SelectItem>
+            <SelectItem value="priority">
+              {translate("lago.customer_list.sort.priority")}
+            </SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+
+      <div className="mb-2 flex flex-wrap items-center gap-1.5">
         {SEGMENTS.map((s) => {
           const active = activeSegments.has(s);
           return (
@@ -250,20 +277,19 @@ export function LagoCustomerList() {
               size="sm"
               variant={active ? "default" : "outline"}
               onClick={() => toggleSegment(s)}
-              className="h-8"
+              className="h-7 px-2"
+              title={`Interval: hver ${SEGMENT_INTERVAL_DAYS[s]}. dag`}
             >
-              {translate("lago.customer.segment")} {s}
-              <span className="text-muted-foreground ml-1.5 text-[10px]">
-                {SEGMENT_INTERVAL_DAYS[s]}d
-              </span>
+              {s}
             </Button>
           );
         })}
+        <span className="bg-border mx-1 h-4 w-px" aria-hidden />
         <Button
           size="sm"
           variant={onlyOverdue ? "default" : "outline"}
           onClick={() => setOnlyOverdue((v) => !v)}
-          className="h-8"
+          className="h-7 px-2"
         >
           {translate("lago.customer_list.filter_overdue")}
         </Button>
@@ -271,7 +297,7 @@ export function LagoCustomerList() {
           size="sm"
           variant={onlyMine ? "default" : "outline"}
           onClick={() => setOnlyMine((v) => !v)}
-          className="h-8"
+          className="h-7 px-2"
           disabled={mySalesId == null}
         >
           {translate("lago.customer_list.filter_mine")}
@@ -304,7 +330,7 @@ export function LagoCustomerList() {
         <ul className="space-y-2">
           {rows.map((row) => (
             <li key={row.id}>
-              <CustomerRow row={row} />
+              <CustomerRow row={row} emphasisePriority={emphasisePriority} />
             </li>
           ))}
         </ul>
