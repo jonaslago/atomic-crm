@@ -1,4 +1,5 @@
 import { CRM } from "@/components/atomic-crm/root/CRM";
+import { LagoCustomerShow } from "@/lago/customers/LagoCustomerShow";
 import { lagoI18nProvider } from "@/lago/i18n/lagoI18nProvider";
 
 /**
@@ -25,6 +26,12 @@ import { lagoI18nProvider } from "@/lago/i18n/lagoI18nProvider";
  *    />
  * );
  */
-const App = () => <CRM disableTelemetry i18nProvider={lagoI18nProvider} />;
+const App = () => (
+  <CRM
+    disableTelemetry
+    i18nProvider={lagoI18nProvider}
+    companyShow={LagoCustomerShow}
+  />
+);
 
 export default App;

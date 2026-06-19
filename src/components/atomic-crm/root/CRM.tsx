@@ -5,7 +5,7 @@ import type {
   LayoutComponent,
 } from "ra-core";
 import { CustomRoutes, localStorageStore, Resource } from "ra-core";
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, type ComponentType } from "react";
 import { Route } from "react-router";
 import { QueryClient } from "@tanstack/react-query";
 import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client";
@@ -70,6 +70,12 @@ export type CRMProps = {
   store?: CoreAdminProps["store"];
   dashboard?: DashboardComponent;
   layout?: LayoutComponent;
+  /**
+   * LAGO addition: optional override for the `companies` resource show
+   * component. When provided, both desktop and mobile Resource registrations
+   * use it instead of upstream's default CompanyShow.
+   */
+  companyShow?: ComponentType;
 } & Partial<ConfigurationContextValue>;
 
 /**
@@ -131,6 +137,7 @@ export const CRM = ({
   disableEmailPasswordAuthentication = import.meta.env
     .VITE_DISABLE_EMAIL_PASSWORD_AUTHENTICATION === "true",
   disableTelemetry,
+  companyShow,
   ...rest
 }: CRMProps) => {
   useEffect(() => {
@@ -228,6 +235,7 @@ export const CRM = ({
       loginPage={StartPage}
       requireAuth
       disableTelemetry
+      companyShow={companyShow}
       {...rest}
     />
   );
@@ -237,6 +245,7 @@ const DesktopAdmin = (
   props: CoreAdminProps & {
     dashboard?: DashboardComponent;
     layout?: LayoutComponent;
+    companyShow?: ComponentType;
   },
 ) => {
   return (
@@ -267,7 +276,11 @@ const DesktopAdmin = (
       </CustomRoutes>
       <Resource name="deals" {...deals} />
       <Resource name="contacts" {...contacts} />
-      <Resource name="companies" {...companies} />
+      <Resource
+        name="companies"
+        {...companies}
+        show={props.companyShow ?? companies.show}
+      />
       <Resource name="contact_notes" />
       <Resource name="deal_notes" />
       <Resource name="tasks" />
@@ -281,6 +294,7 @@ const MobileAdmin = (
   props: CoreAdminProps & {
     dashboard?: DashboardComponent;
     layout?: LayoutComponent;
+    companyShow?: ComponentType;
   },
 ) => {
   const queryClient = new QueryClient({
@@ -337,7 +351,7 @@ const MobileAdmin = (
         >
           <Route path=":id/notes/:noteId" element={<NoteShowPage />} />
         </Resource>
-        <Resource name="companies" show={CompanyShow} />
+        <Resource name="companies" show={props.companyShow ?? CompanyShow} />
         <Resource name="tasks" list={MobileTasksList} />
       </Admin>
     </PersistQueryClientProvider>

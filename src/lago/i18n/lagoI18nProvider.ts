@@ -8,6 +8,7 @@ import { raSupabaseFrenchMessages } from "ra-supabase-language-french";
 import { englishCrmMessages } from "@/components/atomic-crm/providers/commons/englishCrmMessages";
 import { frenchCrmMessages } from "@/components/atomic-crm/providers/commons/frenchCrmMessages";
 import { danishCrmMessages } from "./danishCrmMessages";
+import { danishLagoMessages } from "./danishLagoMessages";
 
 // LAGO's i18n provider. Rebuilds the polyglot chain instead of touching
 // upstream's provider, so atomic-crm upgrades stay merge-safe.
@@ -62,6 +63,7 @@ const danishCatalog = mergeTranslations(
   danishMessages,
   raSupabaseDanishOverride,
   danishCrmMessages,
+  danishLagoMessages,
 );
 
 export const getLagoInitialLocale = (): "da" | "en" | "fr" => {

@@ -30,6 +30,12 @@ unavoidable and **what to re-check** when pulling a fresh upstream.
 - **Re-check on upstream merge:** if upstream adds new mandatory `<CRM>`
   props, mirror them here.
 
+### `src/components/atomic-crm/root/CRM.tsx`
+
+- **Type:** additive extension point — added an optional `companyShow?: React.ComponentType` prop to `CRMProps`, plumbed through to both `DesktopAdmin` and `MobileAdmin` so it overrides the default `companies` Resource show component when provided.
+- **Why:** Domain-brief 1 (kerne-kundebillede) needs a fully LAGO-shaped customer page, and upstream's `<CRM>` exposed no per-resource override hook. The change is small and backwards-compatible (default behaviour unchanged when prop is omitted); future LAGO features will likely justify similar hooks for other resources, but those are out of scope here.
+- **Re-check on upstream merge:** if upstream itself adds a `companyShow` prop with different semantics, reconcile the two. If upstream refactors the `<Resource name="companies" ...>` registration, re-thread the prop. Consider upstreaming this hook as a PR.
+
 ### `supabase/config.toml`
 
 - **Type:** additive — new `[functions.ai-adapter]` block appended after
