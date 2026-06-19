@@ -2,10 +2,10 @@ import { getSupabaseClient } from "@/components/atomic-crm/providers/supabase/su
 import type {
   CompanyCore,
   CompanyLagoExtension,
+  CompanyNote,
   ContactSummary,
   LagoCustomerData,
   OpenTask,
-  RecentNote,
   SaveExtensionInput,
 } from "./types";
 
@@ -17,7 +17,7 @@ export async function fetchLagoCustomer(
   companyId: number,
 ): Promise<LagoCustomerData> {
   const supabase = getSupabaseClient();
-  const [companyRes, extensionRes, contactsRes] = await Promise.all([
+  const [companyRes, extensionRes, contactsRes, notesRes] = await Promise.all([
     supabase
       .from("companies")
       .select(
@@ -38,40 +38,34 @@ export async function fetchLagoCustomer(
       .eq("company_id", companyId)
       .order("last_name", { ascending: true })
       .returns<ContactSummary[]>(),
+    supabase
+      .from("company_notes_lago")
+      .select("id, company_id, contact_id, text, sales_id, created_at")
+      .eq("company_id", companyId)
+      .order("created_at", { ascending: false })
+      .limit(20)
+      .returns<CompanyNote[]>(),
   ]);
 
   if (companyRes.error) throw companyRes.error;
   if (extensionRes.error) throw extensionRes.error;
   if (contactsRes.error) throw contactsRes.error;
+  if (notesRes.error) throw notesRes.error;
 
   const contactIds = (contactsRes.data ?? []).map((c) => c.id);
 
   let openTasks: OpenTask[] = [];
-  let recentNotes: RecentNote[] = [];
-
   if (contactIds.length > 0) {
-    const [tasksRes, notesRes] = await Promise.all([
-      supabase
-        .from("tasks")
-        .select("id, text, due_date, type, contact_id")
-        .in("contact_id", contactIds)
-        .is("done_date", null)
-        .order("due_date", { ascending: true })
-        .limit(20)
-        .returns<OpenTask[]>(),
-      supabase
-        .from("contact_notes")
-        .select("id, text, date, contact_id, sales_id")
-        .in("contact_id", contactIds)
-        .order("date", { ascending: false })
-        .limit(10)
-        .returns<RecentNote[]>(),
-    ]);
-
+    const tasksRes = await supabase
+      .from("tasks")
+      .select("id, text, due_date, type, contact_id")
+      .in("contact_id", contactIds)
+      .is("done_date", null)
+      .order("due_date", { ascending: true })
+      .limit(20)
+      .returns<OpenTask[]>();
     if (tasksRes.error) throw tasksRes.error;
-    if (notesRes.error) throw notesRes.error;
     openTasks = tasksRes.data ?? [];
-    recentNotes = notesRes.data ?? [];
   }
 
   return {
@@ -79,25 +73,26 @@ export async function fetchLagoCustomer(
     extension: extensionRes.data ?? null,
     contacts: contactsRes.data ?? [],
     openTasks,
-    recentNotes,
+    notes: notesRes.data ?? [],
   };
 }
 
-export interface CreateContactNoteInput {
-  contact_id: number;
+export interface CreateCompanyNoteInput {
+  company_id: number;
   text: string;
+  contact_id?: number | null;
   sales_id?: number | null;
 }
 
-export async function createContactNote(
-  input: CreateContactNoteInput,
+export async function createCompanyNote(
+  input: CreateCompanyNoteInput,
 ): Promise<void> {
   const supabase = getSupabaseClient();
-  const { error } = await supabase.from("contact_notes").insert({
-    contact_id: input.contact_id,
+  const { error } = await supabase.from("company_notes_lago").insert({
+    company_id: input.company_id,
+    contact_id: input.contact_id ?? null,
     text: input.text,
     sales_id: input.sales_id ?? null,
-    date: new Date().toISOString(),
   });
   if (error) throw error;
 }

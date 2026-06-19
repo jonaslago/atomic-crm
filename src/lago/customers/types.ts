@@ -48,12 +48,13 @@ export interface OpenTask {
   contact_id: number;
 }
 
-export interface RecentNote {
+export interface CompanyNote {
   id: number;
+  company_id: number;
+  contact_id?: number | null;
   text: string;
-  date: string;
-  contact_id: number;
   sales_id?: number | null;
+  created_at: string;
 }
 
 export interface LagoCustomerData {
@@ -61,7 +62,7 @@ export interface LagoCustomerData {
   extension: CompanyLagoExtension | null;
   contacts: ContactSummary[];
   openTasks: OpenTask[];
-  recentNotes: RecentNote[];
+  notes: CompanyNote[];
 }
 
 export interface SaveExtensionInput {

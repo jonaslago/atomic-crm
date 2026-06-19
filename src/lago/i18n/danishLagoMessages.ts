@@ -46,12 +46,15 @@ export const danishLagoMessages = {
         load_failed: "Kunne ikke hente kunden.",
       },
       quick_note: {
-        label: "Hurtig-notat på %{name}",
+        label: "Hurtig-notat på kunden",
         placeholder: "Hvad skete der i mødet? (gemmes med det samme)",
         submit: "Gem notat",
         save_failed: "Kunne ikke gemme notatet — prøv igen.",
-        needs_contact:
-          "Tilføj først en kontaktperson på kunden — så kan du notere herfra.",
+        contact_label: "Om kontakt (valgfrit)",
+        contact_none: "— ikke en specifik person —",
+      },
+      note: {
+        about_contact: "om %{name}",
       },
       quick_task: {
         label: "Hvad er næste skridt?",

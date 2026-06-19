@@ -33,10 +33,10 @@ import { ownershipOf } from "./fieldOwnership";
 import { QuickNoteForm } from "./QuickNoteForm";
 import { QuickTaskForm } from "./QuickTaskForm";
 import type {
+  CompanyNote,
   ContactSummary,
   LagoCustomerData,
   OpenTask,
-  RecentNote,
   SaveExtensionInput,
 } from "./types";
 import { VismaBadge } from "./VismaBadge";
@@ -377,13 +377,27 @@ function ContactsSection({ contacts }: { contacts: ContactSummary[] }) {
   );
 }
 
+function contactNameById(
+  contacts: ContactSummary[],
+  id: number | null | undefined,
+): string | null {
+  if (id == null) return null;
+  const c = contacts.find((x) => x.id === id);
+  if (!c) return null;
+  return (
+    [c.first_name, c.last_name].filter(Boolean).join(" ").trim() || `#${c.id}`
+  );
+}
+
 function NotesSection({
   notes,
-  primaryContact,
+  contacts,
+  companyId,
   invalidateKey,
 }: {
-  notes: RecentNote[];
-  primaryContact: ContactSummary | undefined;
+  notes: CompanyNote[];
+  contacts: ContactSummary[];
+  companyId: number;
   invalidateKey: ReadonlyArray<unknown>;
 }) {
   const translate = useTranslate();
@@ -393,7 +407,8 @@ function NotesSection({
       icon={<StickyNote className="h-4 w-4" />}
     >
       <QuickNoteForm
-        primaryContact={primaryContact}
+        companyId={companyId}
+        contacts={contacts}
         invalidateKey={invalidateKey}
       />
       {notes.length === 0 ? (
@@ -402,14 +417,27 @@ function NotesSection({
         </p>
       ) : (
         <ul className="space-y-3">
-          {notes.map((n) => (
-            <li key={n.id} className="border-b pb-3 last:border-b-0 last:pb-0">
-              <div className="text-muted-foreground text-xs">
-                {formatDate(n.date)}
-              </div>
-              <div className="text-sm whitespace-pre-wrap">{n.text}</div>
-            </li>
-          ))}
+          {notes.map((n) => {
+            const contactName = contactNameById(contacts, n.contact_id);
+            return (
+              <li
+                key={n.id}
+                className="border-b pb-3 last:border-b-0 last:pb-0"
+              >
+                <div className="text-muted-foreground flex items-center gap-2 text-xs">
+                  <span>{formatDate(n.created_at)}</span>
+                  {contactName && (
+                    <Badge variant="outline" className="font-normal">
+                      {translate("lago.customer.note.about_contact", {
+                        name: contactName,
+                      })}
+                    </Badge>
+                  )}
+                </div>
+                <div className="text-sm whitespace-pre-wrap">{n.text}</div>
+              </li>
+            );
+          })}
         </ul>
       )}
     </SectionCard>
@@ -592,8 +620,9 @@ export function LagoCustomerShow() {
         />
         <ContactsSection contacts={data.contacts} />
         <NotesSection
-          notes={data.recentNotes}
-          primaryContact={primaryContact}
+          notes={data.notes}
+          contacts={data.contacts}
+          companyId={data.company.id}
           invalidateKey={invalidateKey}
         />
         <CrmFieldsSection
