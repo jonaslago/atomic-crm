@@ -130,9 +130,16 @@
         };
 
         function interceptAuthCallback() {
-                const hash = window.location.hash;
+                // LAGO Brief 42-korrektur (16. sep 2026): upstream-filen
+                // pegede på #/auth-callback, som ikke er registreret i
+                // CRM.tsx's egne routes (kun signup, confirmation-required,
+                // set-password, forgot-password, oauth-consent). Routeren
+                // faldt tilbage til login og adgangskoden kunne aldrig
+                // sættes. Går direkte til set-password — SetPasswordPage's
+                // useSupabaseAccessToken læser begge tokens fra hash-
+                // query'en, og recovery-flowet er den ene sti vi bruger.
                 const {access_token, refresh_token, type} = getUrlParams();
-                window.location.href = `./#/auth-callback?access_token=${access_token}&refresh_token=${refresh_token}&type=${type}`;
+                window.location.href = `./#/set-password?access_token=${access_token}&refresh_token=${refresh_token}&type=${type}`;
         }
     
         // Call the function to intercept the auth callback
