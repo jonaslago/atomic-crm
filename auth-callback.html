@@ -118,31 +118,28 @@
         </div>
     </body>
     <script>
-        const getUrlParams = () => {
-            const urlSearchParams = new URLSearchParams(
-                window.location.hash.substring(1)
-            );
-            const access_token = urlSearchParams.get('access_token');
-            const refresh_token = urlSearchParams.get('refresh_token');
-            const type = urlSearchParams.get('type');
-
-            return { access_token, refresh_token, type };
-        };
-
-        function interceptAuthCallback() {
-                // LAGO Brief 42-korrektur (16. sep 2026): upstream-filen
-                // pegede på #/auth-callback, som ikke er registreret i
-                // CRM.tsx's egne routes (kun signup, confirmation-required,
-                // set-password, forgot-password, oauth-consent). Routeren
-                // faldt tilbage til login og adgangskoden kunne aldrig
-                // sættes. Går direkte til set-password — SetPasswordPage's
-                // useSupabaseAccessToken læser begge tokens fra hash-
-                // query'en, og recovery-flowet er den ene sti vi bruger.
-                const {access_token, refresh_token, type} = getUrlParams();
-                window.location.href = `./#/set-password?access_token=${access_token}&refresh_token=${refresh_token}&type=${type}`;
-        }
-    
-        // Call the function to intercept the auth callback
-        interceptAuthCallback();
+        // LAGO Brief 42-korrektur (16. sep 2026): tre tilstande skal
+        // håndteres separat — samme regler som inline-interceptor'en
+        // i index.html:
+        //
+        //   1) access_token i hash → #/set-password?<hash-params>
+        //   2) error i hash (fx udløbet link) → #/login?<hash-params>
+        //      så login-siden kan vise brugeren hvad der gik galt
+        //   3) intet af det → bliv på siden (viser loader; sælger må
+        //      lukke fanen — bør ikke ske i praksis, men bedre end en
+        //      tavs redirect til login)
+        (function () {
+            var raw = window.location.hash.substring(1);
+            var params = new URLSearchParams(raw);
+            var target = null;
+            if (params.get("access_token")) {
+                target = "#/set-password?" + params.toString();
+            } else if (params.get("error") || params.get("error_description")) {
+                target = "#/login?" + params.toString();
+            }
+            if (target) {
+                window.location.replace("./" + target);
+            }
+        })();
     </script>
 </html>
