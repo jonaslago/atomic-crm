@@ -750,6 +750,14 @@ export function AabneOrdrerSection({
       return next;
     });
   };
+  // Brief 75 tillæg E (22. sep 2026): tavs top-5 var farlig. Overskriften
+  // siger "12 aktive" og totalen dækker 12, men listen viste 5 uden
+  // markering — sælgeren kunne ikke se hvor de andre 7 var. 19 kunder
+  // har > 5 åbne ordrer (max 16 hos Prebens). Vis "Vis alle N →" når
+  // grænsen skjuler ordrer, ellers ikke.
+  const [showAllOrders, setShowAllOrders] = useState(false);
+  const visibleOrders = showAllOrders ? orders : orders.slice(0, ORDER_LIMIT);
+  const hiddenOrders = orders.length - visibleOrders.length;
   return (
     <Section variant={isLaptop ? "panel" : "divider"}>
       {isLaptop ? (
@@ -781,7 +789,7 @@ export function AabneOrdrerSection({
       ) : (
         <>
           <RowGroup>
-            {orders.slice(0, 5).map((o) => (
+            {visibleOrders.map((o) => (
               <OrderRow
                 key={o.ordre_nr}
                 order={o}
@@ -790,6 +798,15 @@ export function AabneOrdrerSection({
               />
             ))}
           </RowGroup>
+          {hiddenOrders > 0 && (
+            <button
+              type="button"
+              onClick={() => setShowAllOrders(true)}
+              className="mt-1 self-start text-[length:var(--t-sec)] text-[var(--fg-2)] font-medium underline-offset-2 hover:underline"
+            >
+              Vis alle {orders.length} ordrer →
+            </button>
+          )}
           <OrderTotals totals={totals} />
         </>
       )}
@@ -876,6 +893,15 @@ function OrderRow({
     </li>
   );
 }
+
+/**
+ * Brief 75 tillæg E (22. sep 2026): grænse på ordre-listen. Fem er
+ * højt nok til at dække medianen af kunder, lavt nok til at kundekortet
+ * ikke svulmer på storkunder med 12+ åbne ordrer. Når grænsen skjuler
+ * ordrer, står "Vis alle N ordrer →" under listen — så tallet stemmer
+ * med overskriften og totalen.
+ */
+const ORDER_LIMIT = 5;
 
 /**
  * Brief 75 tillæg D §4: linje-detaljer i en foldet-ud ordre.
