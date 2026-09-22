@@ -4,26 +4,27 @@ import { getSupabaseClient } from "@/components/atomic-crm/providers/supabase/su
 
 /**
  * Brief 45 · sektion 7 på kundekortet · rev. Brief 48 §B (16. sep 2026)
- * · rev. Brief 75 tillæg A §1 og tillæg F (22. sep 2026).
+ * · rev. Brief 75 tillæg A §1, tillæg F, og brief 78 + tillæg A
+ * (22. sep 2026).
  *
- * Åbne ordrer aggregeres pr. ordre_nr — én ordre kan have mange linjer,
- * men sælgeren skal se ordren, ikke linjerne. total = sum af
- * ej_faktureret på linjerne (kr uden moms).
+ * Åbne ordrer aggregeres pr. ordre_nr. total = sum af ej_faktureret på
+ * linjerne (kr uden moms).
  *
- * Brief 75 tillæg F (22. sep 2026): linjens statustekst kommer nu fra
- * `rest` (= antal - antal_faerdigmeldt), ikke fra `lagerstatus`. `rest`
- * er kundens mangel: hvor mange flasker hun endnu ikke har fået.
- * `lagerstatus` er derimod afledt af `reserveret_mod_lager` mod `antal`
- * (aabneOrdrer.ts:268-271) — en lagerintern kendsgerning om hvor
- * meget der er reserveret på hylderne. Ordet "delvis" antyder, at
- * kunden har fået noget, mens hun i praksis kan have fået 0 (fx Vista
- * Alegre Fine Ruby på AEvin.dk: rest=60 af 60, lagerstatus=delvis
- * fordi noget er reserveret på lager, men kunden mangler alt).
+ * Brief 78 §1: `Undtages lagerhåndtering = 1` var tidligere et
+ * import-filter; det droppede kundens prissatte linjer (AEvin #34696·1
+ * "91801-Jul" 3.163,80 kr forsvandt; komponenten 91801 blev). Filteret
+ * er væk. Par-detektion i visnings-laget: for hver ordre matches
+ * salgsvarer (undtages=1, belob>0) med komponenter (undtages=0, belob=0,
+ * res>0) via produktnr-prefix. Salgsvaren vises; komponentens
+ * `reserveret_mod_lager` overtages så statustekst passer.
  *
- * Ordre-status følger samme kilde: rest > 0 på mindst én linje →
- * "Restordre" (kunden venter). Alle rest = 0 → "Klar til levering".
+ * Brief 78 tillæg A §1: rest = antal - reserveret_mod_lager (VISMAs
+ * egen formel, "I rest"). Ikke antal - antal_faerdigmeldt, som altid
+ * gav rest = antal fordi LAGO aldrig dellevererer på samme ordre.
  *
- * Brief 48 §B: restNote nævner PRODUKTNAVN i stedet for linjetal.
+ * Brief 78 tillæg A §3: `note` fra VISMA (ordrens formål — fx
+ * "Portvinspakke 2026 - rest") er den bedste enkeltoplysning en
+ * sælger kan få. Vises i ordre-hovedet.
  */
 
 export interface OpenOrderLine {
@@ -32,29 +33,28 @@ export interface OpenOrderLine {
   /** Produkt-beskrivelse fra products_lago (fallback: produktnr). */
   produktnavn: string;
   antal: number;
-  /** Brief 75 tillæg F: rest = antal - antal_faerdigmeldt, kundens mangel. */
+  /** Brief 78 tillæg A §1: rest = antal - reserveret_mod_lager. */
   rest: number;
+  /** Brief 78 §1: hvor mange der er reserveret på lager til denne
+   *  linje. Kommer fra parret komponent-linje hvis paret; ellers
+   *  direkte fra linjen selv. Bruges til "N klar, M mangler"-tekst. */
+  reserveret: number;
   ej_faktureret: number;
   /**
-   * Brief 75 tillæg F (22. sep 2026): sælgervendt statustekst afledt af
-   * rest. "Delvis" og "restordre" er lagerets sprog og er væk fra
-   * linjeniveau — de forvirrer, når kunden reelt har fået 0.
+   * Brief 75 tillæg F · rev. brief 78 tillæg A §1 (22. sep 2026):
+   * sælgervendt statustekst afledt af rest (I rest = antal −
+   * reserveret_mod_lager).
    *
-   * - "afventer" (rest === antal): intet leveret; antallet står allerede
-   *   foran, så et rest-tal ville være dobbeltkonfekt.
-   * - "iRest" (0 < rest < antal): noget er leveret, noget mangler. UI
-   *   viser "N i rest" i rødt.
-   * - "klar" (rest === 0): kunden har fået alt.
+   * - "afventer" (reserveret = 0): intet reserveret, intet leveret.
+   * - "delvis"   (0 < reserveret < antal): nogle flasker klar på
+   *   lager, resten mangler. UI viser "N klar, M mangler".
+   * - "klar"     (reserveret ≥ antal): alt reserveret, kan sendes.
    */
-  kundeStatus: "afventer" | "iRest" | "klar";
+  kundeStatus: "afventer" | "delvis" | "klar";
   /**
-   * Brief 75 tillæg D-opfølgning (22. sep 2026) · rev. tillæg F (22. sep 2026):
-   * når `ej_faktureret === 0` er beløbet ikke informationen — LAGO's
-   * prisstruktur gør nul lovligt. Label mapper VISMA's salgstype +
-   * kampagne til et ord sælgeren kan sige højt til kunden. UI viser
-   * ordet EFTER produktnavnet (fx "Vista Alegre Fine Ruby · kampagne"),
-   * ikke i beløbskolonnen — så "0 kr." forbliver et beløb og ikke
-   * bliver til volapyk. `null` = ingen tilføjelse; beløbet står alene.
+   * Brief 75 tillæg D-opfølgning · rev. tillæg F: label for 0-kr linjer
+   * (prøve/promo/frie flasker/kampagne). Vises EFTER produktnavnet,
+   * ikke i beløbskolonnen — så "0 kr." forbliver et beløb.
    */
   belobLabel: string | null;
 }
@@ -64,29 +64,32 @@ export interface OpenOrderSummary {
   ordre_dato: string;
   total: number;
   status: "klar" | "restordre";
-  /** Brief 75 tillæg D (22. sep 2026): antal linjer der afventer i
-   *  denne ordre (restordre + delvis). Bruges i stedet for restNote
-   *  når hele ordren skal foldes ud — sælgeren skal kunne se HVAD
-   *  der afventer, ikke bare et navn og "+ N andre". */
+  /** Antal linjer der afventer i denne ordre (rest > 0). */
   restLineCount: number;
-  /** Brief 51 §4 (17. sep 2026): tidligste ønskede leveringsdato på
-   *  linjerne i ordren. Null når ingen linje har feltet udfyldt. */
+  /** Brief 78 tillæg A §2: alle datoer er ØNSKEDE — der findes ingen
+   *  bekræftet leveringsdato i OSR-udtrækket. Ordet "Ønsket" skal
+   *  altid stå. */
   oensketLevering: string | null;
-  /** Brief 75 tillæg D §4: alle linjer i ordren, så UI kan folde ud
-   *  uden en ekstra fetch. */
+  /** Brief 78 tillæg A §3: ordrens Note fra VISMA — ens på alle
+   *  linjer, så vi tager første ikke-tomme. */
+  note: string | null;
+  /** Brief 75 tillæg D §4: varelinjer i ordren (uden tillæg/afgifter),
+   *  så UI kan folde ud uden en ekstra fetch. */
   lines: OpenOrderLine[];
+  /** Brief 78 tillæg B §2 (22. sep 2026): samlet beløb for
+   *  tillæg/afgifter (Vej, Energi, emb-afg) — de tælles i `total`
+   *  men vises som én linje nederst, ikke som varer man venter på. */
+  tillaegOgAfgifter: number;
 }
 
 /**
- * Brief 75 tillæg C (22. sep 2026): linje-baserede totaler, opdelt så
- * sælgeren ikke skal lægge sammen i hovedet foran en kunde.
+ * Brief 75 tillæg C · rev. brief 78 tillæg A §1: linje-baserede totaler
+ * målt på reservation (VISMAs "I rest"):
  *
- * - klar:      lagerstatus=klar (inkl. ankommet En Primeur, jf. tillæg B)
- * - afventer:  lagerstatus in {restordre, delvis}, UNDTAGET En Primeur
- *              der stadig venter (aftalte 1-2 år, ikke akut)
- * - enPrimeur: status=21 OG lagerstatus != klar — separat linje, holdes
- *              uden for "i alt" så tallet ikke bliver misvisende
- * - iAlt:      klar + afventer (bevidst UDEN enPrimeur)
+ * - klar:      reserveret ≥ antal (kan sendes)
+ * - afventer:  reserveret < antal, UNDTAGET En Primeur (aftalte 1-2 år)
+ * - enPrimeur: status=21 OG reserveret < antal — separat linje
+ * - iAlt:      klar + afventer
  */
 export interface OpenOrdersTotals {
   klar: number;
@@ -106,6 +109,7 @@ interface RawRow {
   linje_nr: string;
   antal: number | null;
   rest: number | null;
+  reserveret_mod_lager: number | null;
   ej_faktureret: number | null;
   lagerstatus: string | null;
   status: string | null;
@@ -113,31 +117,97 @@ interface RawRow {
   kampagne: string | null;
   produktnr: string | null;
   oensket_leveringsdato: string | null;
+  note: string | null;
+  undtages_lagerhaandtering: boolean | null;
 }
 
 /**
- * Brief 75 tillæg D-opfølgning (22. sep 2026): forklaring på hvorfor
- * en linje har ej_faktureret = 0 kr. LAGO's prisstruktur gør nul
- * lovligt: PRØVE er en smagsprøve, PROMO er en kampagnevare, FRIFL er
- * "frie flasker" (uden beregning), kampagne dækker ikke-klassificerede
- * kampagner. FRIFLM ("nettopris") er derimod en betalt linje — en
- * FRIFLM-linje på 0 kr er en anomali og skal se sådan ud, så vi ikke
- * beroliger sælgeren med et forkert ord.
+ * Brief 75 tillæg D-opfølgning · rev. brief 78 tillæg A §4 (22. sep 2026):
+ * forklaring på hvorfor en linje har ej_faktureret = 0 kr. LAGO's
+ * prisstruktur gør nul lovligt.
  *
- * Returnerer null når beløbet skal vises normalt (også hvis det er
- * 0 kr uden forklaring — dét er den ærlige tilstand).
+ * Rev. brief 78: en komponent-linje (0 kr, reserveret > 0) er en
+ * LAGERROLLE, ikke en kampagne — så label undertrykkes for den.
+ * Bekræftet på AEvin #34696·2 hvor kampagne=26120 stod på ALLE fire
+ * linjer (også dem med pris), så kampagne-koden er ikke forklaringen
+ * på 0-beløbet. Rollen som komponent er.
  */
 function beloebLabel(
   ejFaktureret: number,
   salgstype: string | null,
   kampagne: string | null,
+  reserveret: number,
 ): string | null {
   if (ejFaktureret !== 0) return null;
+  // Komponent-mistanke: 0 kr + reservation > 0. Sig ikke "kampagne".
+  if (reserveret > 0) return null;
   if (salgstype === "PRØVE") return "prøve";
   if (salgstype === "PROMO") return "promo";
   if (salgstype === "FRIFL") return "frie flasker";
   if (kampagne && kampagne !== "") return "kampagne";
   return null;
+}
+
+/**
+ * Brief 78 §1 (22. sep 2026): par-detektion for salgsvare + komponent.
+ *
+ * VISMA modellerer nogle varer (fx Vista Alegre Juleport) som to
+ * linjer: en salgsvare (produktnr=91801-Jul, undtages=1, belob>0) og
+ * en komponent (produktnr=91801, undtages=0, belob=0, reserveret>0).
+ * De er én bestilling, ikke to.
+ *
+ * Reglen: match to linjer på samme ordre, samme antal, én med
+ * undtages=1 og belob>0, én med undtages=0 og belob=0 og reserveret>0,
+ * som deler produktnr-prefix (før første `-`). Salgsvaren vises;
+ * komponentens reserveret_mod_lager overføres.
+ *
+ * Match kun HELT entydige par (præcis én kandidat i hver retning).
+ * Findes flere kandidater, lad linjerne stå alene — det er bedre at
+ * vise begge sandheder end at gætte forkert.
+ *
+ * Returnerer et Set med linje_nr for komponent-linjer der skal skjules,
+ * og et Map fra salgsvare-linje_nr til reserveret-værdi der skal
+ * overføres.
+ */
+function detektPar(lines: RawRow[]): {
+  skjul: Set<string>;
+  overtagRes: Map<string, number>;
+} {
+  const skjul = new Set<string>();
+  const overtagRes = new Map<string, number>();
+  const salgsvarer = lines.filter(
+    (l) => l.undtages_lagerhaandtering === true && Number(l.ej_faktureret) > 0,
+  );
+  const komponenter = lines.filter(
+    (l) =>
+      l.undtages_lagerhaandtering === false &&
+      Number(l.ej_faktureret) === 0 &&
+      Number(l.reserveret_mod_lager) > 0,
+  );
+  const basePart = (p: string | null) => (p ?? "").split("-")[0];
+  for (const s of salgsvarer) {
+    const sPrefix = basePart(s.produktnr);
+    const sAntal = Number(s.antal ?? 0);
+    if (!sPrefix || sAntal === 0) continue;
+    const kandidater = komponenter.filter(
+      (k) =>
+        basePart(k.produktnr) === sPrefix && Number(k.antal ?? 0) === sAntal,
+    );
+    if (kandidater.length !== 1) continue;
+    // Sikring: komponenten må ikke også være et match for en anden
+    // salgsvare, ellers er relationen tvetydig.
+    const komp = kandidater[0];
+    const kompMatchesElsewhere = salgsvarer.filter(
+      (x) =>
+        x !== s &&
+        basePart(x.produktnr) === basePart(komp.produktnr) &&
+        Number(x.antal ?? 0) === Number(komp.antal ?? 0),
+    );
+    if (kompMatchesElsewhere.length > 0) continue;
+    skjul.add(komp.linje_nr);
+    overtagRes.set(s.linje_nr, Number(komp.reserveret_mod_lager ?? 0));
+  }
+  return { skjul, overtagRes };
 }
 
 export function useOpenOrders(vismaCustomerNo: string | null | undefined) {
@@ -150,20 +220,13 @@ export function useOpenOrders(vismaCustomerNo: string | null | undefined) {
       const { data, error } = await supabase
         .from("open_orders_lago")
         .select(
-          "ordre_nr, ordre_dato, linje_nr, antal, rest, ej_faktureret, lagerstatus, status, salgstype, kampagne, produktnr, oensket_leveringsdato",
+          "ordre_nr, ordre_dato, linje_nr, antal, rest, reserveret_mod_lager, ej_faktureret, lagerstatus, status, salgstype, kampagne, produktnr, oensket_leveringsdato, note, undtages_lagerhaandtering",
         )
         .eq("visma_customer_no", vismaCustomerNo as string)
         .order("ordre_dato", { ascending: false });
       if (error) throw error;
       const rows = (data ?? []) as RawRow[];
 
-      // Brief 75 tillæg F: rest-linjer = rest > 0. Én linje med rest > 0
-      // betyder kunden venter på noget — uanset hvad lageret siger. En
-      // linje kan have lagerstatus=delvis (noget reserveret på hylderne),
-      // men rest = antal fordi intet er faerdigmeldt.
-      const isRestLine = (r: RawRow) => (r.rest ?? 0) > 0;
-      // Brief 75 tillæg D §4: fetche produktnavn for ALLE linjer (ikke
-      // kun rest), så folde-ud viser hvad hver linje er.
       const allProduktnr = new Set<string>();
       for (const r of rows) {
         if (r.produktnr) allProduktnr.add(r.produktnr);
@@ -183,34 +246,68 @@ export function useOpenOrders(vismaCustomerNo: string | null | undefined) {
         }
       }
 
+      // Brief 78 tillæg B §3: enote/inote-linjer er note-markører uden
+      // indhold i OSR-udtrækket (Note-feltet på selve linjen er tom;
+      // teksten ligger i VISMA-systemet men eksporteres ikke). Vi
+      // skjuler dem helt fra ordre-visningen — de ville stå som "Ekstern
+      // Note · 1 stk. · 0 kr." uden information.
+      const rowsUdenNoteLinjer = rows.filter(
+        (r) => r.produktnr !== "enote" && r.produktnr !== "inote",
+      );
       const byOrdre = new Map<string, RawRow[]>();
-      for (const r of rows) {
+      for (const r of rowsUdenNoteLinjer) {
         const arr = byOrdre.get(r.ordre_nr) ?? [];
         arr.push(r);
         byOrdre.set(r.ordre_nr, arr);
       }
 
       const out: OpenOrderSummary[] = [];
+      // Brief 78 §1: hold pardata pr. ordre så totals også bruger dem.
+      const skjulByOrdre = new Map<string, Set<string>>();
+      const overtagByOrdre = new Map<string, Map<string, number>>();
+      // Brief 78 tillæg B §2 (22. sep 2026): Vej/Energi/emb-afg er
+      // afgifter, ikke varer. De tælles i "I alt" men vises samlet
+      // nederst — en vejafgift "afventer" ikke ankomst, den er en
+      // post på regningen.
+      const TILLAEG_PRODUKTNR = new Set(["Vej", "Energi", "emb-afg"]);
       for (const [ordre_nr, lines] of byOrdre) {
-        const total = lines.reduce(
+        const { skjul, overtagRes } = detektPar(lines);
+        skjulByOrdre.set(ordre_nr, skjul);
+        overtagByOrdre.set(ordre_nr, overtagRes);
+        const synligeLines = lines.filter((l) => !skjul.has(l.linje_nr));
+
+        // Adskil varelinjer fra tillæg/afgifter.
+        const vareLines = synligeLines.filter(
+          (l) => !TILLAEG_PRODUKTNR.has(l.produktnr ?? ""),
+        );
+        const tillaegLines = synligeLines.filter((l) =>
+          TILLAEG_PRODUKTNR.has(l.produktnr ?? ""),
+        );
+        const tillaegOgAfgifter = tillaegLines.reduce(
           (s, l) => s + Number(l.ej_faktureret ?? 0),
           0,
         );
-        const restLines = lines.filter(isRestLine);
-        // Brief 51 §4: tidligste ønskede leveringsdato på tværs af
-        // linjerne. Feltet ligger på ordre-hovedet i VISMA og skulle
-        // være ens på alle linjer, men vi tager tidligste for at være
-        // konservative — en delvis leverance rykker aldrig frem.
-        const leveringsdatoer = lines
+
+        const total = synligeLines.reduce(
+          (s, l) => s + Number(l.ej_faktureret ?? 0),
+          0,
+        );
+
+        const leveringsdatoer = synligeLines
           .map((l) => l.oensket_leveringsdato)
           .filter((d): d is string => Boolean(d))
           .sort();
         const oensketLevering = leveringsdatoer[0] ?? null;
-        // Brief 75 tillæg D §4: linjer med produkt-navn + normaliseret
-        // lagerstatus. Sorter først på lagerstatus (rest/delvis øverst)
-        // så folde-ud viser det interessante først, dernæst på beløb
-        // faldende — det største produkt trækker øjet.
-        const orderLines: OpenOrderLine[] = lines
+
+        // Brief 78 tillæg A §3: note er ens på alle linjer i ordren.
+        // Tag første ikke-tomme (dybest set alle linjer, men trim
+        // whitespace-only tomme strenge).
+        const noteRaw = synligeLines
+          .map((l) => (l.note ?? "").trim())
+          .find((n) => n.length > 0);
+        const note = noteRaw ?? null;
+
+        const orderLines: OpenOrderLine[] = vareLines
           .map((l) => {
             const produktnavn =
               (l.produktnr && navnByProduktnr.get(l.produktnr)) ||
@@ -218,69 +315,94 @@ export function useOpenOrders(vismaCustomerNo: string | null | undefined) {
               "(uden produktnr)";
             const ejFakt = Number(l.ej_faktureret ?? 0);
             const antal = Number(l.antal ?? 0);
-            const rest = Number(l.rest ?? 0);
+            // Brief 78 §1: overtag reservation fra parret komponent
+            // hvis den findes; ellers linjens egen.
+            const overtag = overtagRes.get(l.linje_nr);
+            const reserveret =
+              overtag !== undefined
+                ? overtag
+                : Number(l.reserveret_mod_lager ?? 0);
+            const rest = Math.max(0, antal - reserveret);
             const kundeStatus: OpenOrderLine["kundeStatus"] =
-              rest <= 0 ? "klar" : rest >= antal ? "afventer" : "iRest";
+              reserveret >= antal
+                ? "klar"
+                : reserveret > 0
+                  ? "delvis"
+                  : "afventer";
             return {
               linje_nr: l.linje_nr,
               produktnr: l.produktnr,
               produktnavn,
               antal,
               rest,
+              reserveret,
               ej_faktureret: ejFakt,
               kundeStatus,
-              belobLabel: beloebLabel(ejFakt, l.salgstype, l.kampagne),
+              belobLabel: beloebLabel(
+                ejFakt,
+                l.salgstype,
+                l.kampagne,
+                reserveret,
+              ),
             };
           })
           .sort((a, b) => {
-            // Brief 75 tillæg F: sortér afventende linjer først (kunden
-            // venter), dernæst dem hvor noget er leveret men noget mangler,
-            // dernæst klar. Sekundær: beløb faldende — det store trækker.
+            // Sortér afventende først (kunden venter helt), dernæst
+            // delvis, dernæst klar. Sekundær: beløb faldende.
             const rank = (s: OpenOrderLine["kundeStatus"]) =>
-              s === "afventer" ? 0 : s === "iRest" ? 1 : 2;
+              s === "afventer" ? 0 : s === "delvis" ? 1 : 2;
             const dr = rank(a.kundeStatus) - rank(b.kundeStatus);
             if (dr !== 0) return dr;
             return b.ej_faktureret - a.ej_faktureret;
           });
+
+        // Brief 78 tillæg B §3: en ordre uden synlige linjer (fx
+        // ordre 31890 med kun en enote-linje som filtreres væk) skal
+        // ikke stå i listen — hverken som tom række eller som "N linje
+        // afventer" uden noget under.
+        if (orderLines.length === 0 && tillaegLines.length === 0) continue;
+
+        const restLines = orderLines.filter((l) => l.rest > 0);
         out.push({
           ordre_nr,
-          ordre_dato: lines[0].ordre_dato,
+          ordre_dato: synligeLines[0]?.ordre_dato ?? lines[0].ordre_dato,
           total,
           status: restLines.length > 0 ? "restordre" : "klar",
           restLineCount: restLines.length,
           oensketLevering,
+          note,
           lines: orderLines,
+          tillaegOgAfgifter,
         });
       }
       out.sort((a, b) => (a.ordre_dato < b.ordre_dato ? 1 : -1));
 
-      // Brief 75 tillæg C · rev. tillæg F: linje-baserede totaler. En
-      // Primeur der stadig venter holdes uden for iAlt; ankommet En
-      // Primeur (status=21 + rest=0) tælles som klar — dét er aftalen
-      // fra tillæg B: den er landet, sig det højt. Klar/afventer måles
-      // nu på rest (kundens mangel), ikke lagerstatus (lagerets
-      // reservation).
+      // Brief 75 tillæg C · rev. brief 78 tillæg A §1: totaler måles nu
+      // på reservation (VISMAs "I rest" = 0 → klar). Komponent-linjer
+      // der er skjult i par tælles ikke — deres reservation er allerede
+      // overtaget af salgsvaren.
       let klarRaw = 0;
       let afventerRaw = 0;
       let enPrimeurRaw = 0;
-      for (const r of rows) {
-        const belob = Number(r.ej_faktureret ?? 0);
-        const isEnPrimeur = r.status === "21";
-        const isKlar = Number(r.rest ?? 0) <= 0;
-        if (isEnPrimeur && !isKlar) {
-          enPrimeurRaw += belob;
-        } else if (isKlar) {
-          klarRaw += belob;
-        } else {
-          afventerRaw += belob;
+      for (const [ordre_nr, lines] of byOrdre) {
+        const skjul = skjulByOrdre.get(ordre_nr) ?? new Set<string>();
+        const overtagRes = overtagByOrdre.get(ordre_nr) ?? new Map();
+        for (const r of lines) {
+          if (skjul.has(r.linje_nr)) continue;
+          const belob = Number(r.ej_faktureret ?? 0);
+          const antal = Number(r.antal ?? 0);
+          const overtag = overtagRes.get(r.linje_nr);
+          const reserveret =
+            overtag !== undefined
+              ? overtag
+              : Number(r.reserveret_mod_lager ?? 0);
+          const isEnPrimeur = r.status === "21";
+          const isKlar = reserveret >= antal;
+          if (isEnPrimeur && !isKlar) enPrimeurRaw += belob;
+          else if (isKlar) klarRaw += belob;
+          else afventerRaw += belob;
         }
       }
-      // Brief 75 tillæg C, opfølgning (22. sep 2026): afventer skal
-      // beregnes som iAlt − klar, ikke summeres uafhængigt. Ellers
-      // runder Intl.NumberFormat de tre tal hver for sig og de går
-      // ikke op på skærmen (699.877 mod 302.791 + 397.085 = 699.876).
-      // Runder først iAlt og klar, så afventer er restforskellen —
-      // 302.791 + 397.086 = 699.877 hver gang.
       const klar = Math.round(klarRaw);
       const iAlt = Math.round(klarRaw + afventerRaw);
       const afventer = iAlt - klar;

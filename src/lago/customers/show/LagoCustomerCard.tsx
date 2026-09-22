@@ -878,6 +878,11 @@ function OrderRow({
           </span>
         </div>
       </button>
+      {o.note && (
+        <p className="text-[length:var(--t-sec)] pl-[1.125rem] text-[var(--fg-2)] italic">
+          {o.note}
+        </p>
+      )}
       {o.oensketLevering && (
         <p
           className={cn(
@@ -887,10 +892,12 @@ function OrderRow({
               : "text-[var(--fg-2)]",
           )}
         >
-          Ønsket levering: {formatWeekdayDate(o.oensketLevering)}
+          Ønsket levering {formatWeekdayDate(o.oensketLevering)}
         </p>
       )}
-      {open && hasLines && <OrderLines lines={o.lines} />}
+      {open && hasLines && (
+        <OrderLines lines={o.lines} tillaegOgAfgifter={o.tillaegOgAfgifter} />
+      )}
     </li>
   );
 }
@@ -911,7 +918,13 @@ const ORDER_LIMIT = 5;
  */
 const ORDER_LINE_LIMIT = 10;
 
-function OrderLines({ lines }: { lines: OpenOrderLine[] }) {
+function OrderLines({
+  lines,
+  tillaegOgAfgifter,
+}: {
+  lines: OpenOrderLine[];
+  tillaegOgAfgifter: number;
+}) {
   const [showAll, setShowAll] = useState(false);
   const visibleLines = showAll ? lines : lines.slice(0, ORDER_LINE_LIMIT);
   const hidden = lines.length - visibleLines.length;
@@ -931,6 +944,18 @@ function OrderLines({ lines }: { lines: OpenOrderLine[] }) {
           </button>
         </li>
       )}
+      {/* Brief 78 tillæg B §2 (22. sep 2026): tillæg og afgifter (Vej,
+          Energi, emb-afg) er poster på regningen, ikke varer der
+          afventer ankomst. Samlet som én linje nederst, adskilt fra
+          varelisten, så "I alt" stemmer. */}
+      {tillaegOgAfgifter > 0 && (
+        <li className="mt-1 flex items-baseline justify-between border-t border-[var(--line-2)] pt-2 text-[length:var(--t-meta)] text-[var(--fg-2)]">
+          <span>Tillæg og afgifter</span>
+          <span className="tabular-nums">
+            {kroner.format(tillaegOgAfgifter)}
+          </span>
+        </li>
+      )}
     </ul>
   );
 }
@@ -948,13 +973,18 @@ function OrderLines({ lines }: { lines: OpenOrderLine[] }) {
  * Statustekst kommer fra rest (kundens mangel), ikke lagerstatus.
  */
 function OrderLineRow({ line: l }: { line: OpenOrderLine }) {
-  const isIRest = l.kundeStatus === "iRest";
+  // Brief 78 tillæg A §1 (22. sep 2026): rest er nu antal - reserveret
+  // (VISMAs "I rest"). Statustekst med tre tilfælde:
+  //   - klar (reserveret ≥ antal): "klar"
+  //   - delvis (0 < reserveret < antal): "N klar, M mangler" i rødt
+  //   - afventer (reserveret = 0): "afventer ankomst"
+  const isDelvis = l.kundeStatus === "delvis";
   const statusTekst =
     l.kundeStatus === "klar"
       ? "klar"
       : l.kundeStatus === "afventer"
         ? "afventer ankomst"
-        : `${l.rest} i rest`;
+        : `${l.reserveret} klar, ${l.rest} mangler`;
   return (
     <li className="flex flex-col gap-0.5">
       <span className="text-[length:var(--t-sec)] text-[var(--fg)] break-words">
@@ -972,7 +1002,7 @@ function OrderLineRow({ line: l }: { line: OpenOrderLine }) {
         <span
           className={cn(
             "tabular-nums",
-            isIRest && "text-[var(--st-red-fg)] font-medium",
+            isDelvis && "text-[var(--st-red-fg)] font-medium",
           )}
         >
           {statusTekst}
