@@ -1023,16 +1023,17 @@ function OrderLineRow({ line: l }: { line: OpenOrderLine }) {
 }
 
 /**
- * Brief 75 tillæg C (22. sep 2026) · totalerne under listen.
+ * Brief 75 tillæg C · rev. tillæg H (22. sep 2026) · totalerne under listen.
  *
- * "I alt" og "Klar til levering" står altid. "Afventer ankomst" og
- * "En Primeur" står KUN når de er > 0 — en linje der siger nul er
- * støj (samme regel som alle andre tomme tilstande denne uge).
+ * "I alt" og "Klar til levering" står altid. "Afventer ankomst", "På
+ * reservation" og "En Primeur" står KUN når de er > 0 — en linje der
+ * siger nul er støj.
  *
- * En Primeur står med luft mellem, uden for I alt-summen. Det er ikke
- * en akut forpligtelse; det er en aftale om noget der først findes
- * om halvandet år. At blande den i totalen ville gøre tallet teknisk
- * rigtigt og praktisk misvisende.
+ * Tillæg H rettede en fejl fra tillæg C/G: På reservation og En
+ * Primeur skal være MED i "I alt". Ellers står totalen på 0 kr. med
+ * beløb lige under, hvilket er åbenlyst forkert (Langø Grill: "I alt
+ * 0 kr. / På reservation 15.870 kr."). De to står stadig med luft over
+ * — samme total, anden slags forpligtelse.
  */
 function OrderTotals({ totals }: { totals: OpenOrdersTotals }) {
   return (
@@ -1057,23 +1058,24 @@ function OrderTotals({ totals }: { totals: OpenOrdersTotals }) {
           </span>
         </div>
       )}
-      {totals.enPrimeur > 0 && (
-        <div className="mt-2 flex items-baseline justify-between gap-3">
-          <span className="text-[var(--fg-3)]">En Primeur</span>
-          <span className="font-medium text-[var(--fg-3)] tabular-nums">
-            {kroner.format(totals.enPrimeur)}
-          </span>
-        </div>
-      )}
-      {/* Brief 75 tillæg G (22. sep 2026): reservationer holdes uden
-          for I alt-summen (samme princip som En Primeur i tillæg C).
-          Kunden har bedt om varerne, hun trækker efter behov — det er
-          ikke en akut forpligtelse. */}
+      {/* Brief 75 tillæg H (22. sep 2026): På reservation og En Primeur
+          er MED i I alt (rettelse af tillæg C/G). De står efter en luft
+          — samme total, anden slags forpligtelse. På reservation først
+          (mest hyppig, kundens instruks), En Primeur bagefter (ganske
+          sjælden, aftalt om år). */}
       {totals.paaReservation > 0 && (
         <div className="mt-2 flex items-baseline justify-between gap-3">
           <span className="text-[var(--fg-3)]">På reservation</span>
           <span className="font-medium text-[var(--fg-3)] tabular-nums">
             {kroner.format(totals.paaReservation)}
+          </span>
+        </div>
+      )}
+      {totals.enPrimeur > 0 && (
+        <div className="mt-2 flex items-baseline justify-between gap-3">
+          <span className="text-[var(--fg-3)]">En Primeur</span>
+          <span className="font-medium text-[var(--fg-3)] tabular-nums">
+            {kroner.format(totals.enPrimeur)}
           </span>
         </div>
       )}

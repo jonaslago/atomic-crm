@@ -88,22 +88,26 @@ export interface OpenOrderSummary {
 }
 
 /**
- * Brief 75 tillæg C · rev. brief 78 tillæg A §1: linje-baserede totaler
- * målt på reservation (VISMAs "I rest"):
+ * Brief 75 tillæg C · rev. brief 78 tillæg A §1 · rev. tillæg H (22. sep 2026):
+ * linje-baserede totaler målt på reservation (VISMAs "I rest").
  *
- * - klar:      reserveret ≥ antal (kan sendes)
- * - afventer:  reserveret < antal, UNDTAGET En Primeur (aftalte 1-2 år)
- * - enPrimeur: status=21 OG reserveret < antal — separat linje
- * - iAlt:      klar + afventer
+ * - klar:          reserveret ≥ antal (kan sendes nu)
+ * - afventer:      reserveret < antal, UNDTAGET En Primeur og reservation
+ * - enPrimeur:     status=21 OG reserveret < antal (aftalte 1-2 år)
+ * - paaReservation: levering=5 (kundens instruks: varer står klar til træk)
+ * - iAlt:          SUMMEN AF ALT — klar + afventer + enPrimeur + paaReservation.
+ *                  Skal stemme med de linjer der står under. (Tillæg H
+ *                  rettede den forkerte antagelse fra tillæg C/G om at
+ *                  enPrimeur/reservation stod "uden for" — en total på 0
+ *                  med 15.870 kr. lige under er en åbenlys fejl.)
+ *                  UI viser klar/afventer først, så luft, så
+ *                  paaReservation/enPrimeur — "efter en luft, samme
+ *                  total, anden slags forpligtelse".
  */
 export interface OpenOrdersTotals {
   klar: number;
   afventer: number;
   enPrimeur: number;
-  /** Brief 75 tillæg G (22. sep 2026): sum af beløb på reservations-
-   *  ordrer (levering=5). Holdes uden for `iAlt` — en reservation er
-   *  ikke en akut forpligtelse. Kundens instruks: varerne står klar,
-   *  hun trækker efter behov. */
   paaReservation: number;
   iAlt: number;
 }
@@ -454,11 +458,18 @@ export function useOpenOrders(vismaCustomerNo: string | null | undefined) {
           else afventerRaw += belob;
         }
       }
+      // Brief 75 tillæg H (22. sep 2026): iAlt indeholder ALT. Afventer
+      // beregnes som differencen så afrundingen ikke løber fra os:
+      // iAlt − klar − paaReservation − enPrimeur. De tre sidste rundes
+      // først; afventer er restforskellen. Det er samme princip som
+      // tillæg C's opfølgning (302.791 + 397.086 = 699.877, ikke 699.876).
       const klar = Math.round(klarRaw);
-      const iAlt = Math.round(klarRaw + afventerRaw);
-      const afventer = iAlt - klar;
       const enPrimeur = Math.round(enPrimeurRaw);
       const paaReservation = Math.round(paaReservationRaw);
+      const iAlt = Math.round(
+        klarRaw + afventerRaw + enPrimeurRaw + paaReservationRaw,
+      );
+      const afventer = iAlt - klar - enPrimeur - paaReservation;
 
       return {
         orders: out,
