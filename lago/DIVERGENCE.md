@@ -136,6 +136,30 @@ I applikationskode (supabase-js): brug `range(from, to)` i løkker af
 1000 med samme sum-tjek. `count > body.length` er en afkortning,
 uanset kilden.
 
+## Teknisk gæld: `v_open_orders_categorised` har forældede status-koder (22. sep 2026)
+
+Viewet `public.v_open_orders_categorised` blev bygget i brief 25 tillæg B
+(migration `20260915220000_lago_25_tillaeg_B_kategorier.sql`) og bruger:
+
+```sql
+WHEN split_part(oo.status, ' ', 1) IN ('11','12','19','20') THEN 'INDKOEB_LAP'
+```
+
+**Koderne `19` og `20` findes ikke i VISMA.** De rigtige modtage-koder er
+`13` og `14` (brief 78 tillæg C, 22. sep 2026). `INDKOEBS_STATUS_KODER`
+i `aabneOrdrer.ts` er rettet; viewet er det ikke.
+
+**Viewet er ikke i aktiv brug fra applikationskoden** (kun refereret i
+parser-kommentar), så vi lader det stå — migrationer kan ikke rettes
+bagud uden en ny migration der drop+create'r viewet.
+
+**Gæld:** næste gang viewet får en formel bruger (fx en admin-rapport
+eller en dashboard-widget), skal en ny migration udrulles der genskaber
+viewet med `('11','12','13','14')` i begge WHERE-klausuler (linje 91 og
+104 i `20260915220000_lago_25_tillaeg_B_kategorier.sql`). Uden det arver
+den nye consumer samme fejl — og den fejltype er præcis hvad brief 78
+tillæg C fangede: en autoritativ kilde der var forkert.
+
 ## Current divergences
 
 ### `src/App.tsx`
