@@ -4,24 +4,24 @@ import { getSupabaseClient } from "@/components/atomic-crm/providers/supabase/su
 
 /**
  * Brief 45 · sektion 7 på kundekortet · rev. Brief 48 §B (16. sep 2026)
- * · rev. Brief 75 tillæg A §1 (22. sep 2026).
+ * · rev. Brief 75 tillæg A §1 og tillæg F (22. sep 2026).
  *
  * Åbne ordrer aggregeres pr. ordre_nr — én ordre kan have mange linjer,
  * men sælgeren skal se ordren, ikke linjerne. total = sum af
  * ej_faktureret på linjerne (kr uden moms).
  *
- * Brief 75 tillæg A §1 (22. sep 2026): status kom tidligere fra
- * `i_rest > 0`. Det felt er "deprecated fossil" — parseren sætter det
- * aktivt til NULL siden brief 25 (aabneOrdrer.ts:318). `null > 0`
- * er aldrig sand, så hver eneste ordre viste "klar til levering"
- * uanset virkelighed. 652 restordre-linjer var usynlige for preview'et
- * på alle 93 kunder — en aktiv beroligelse, der var forkert.
+ * Brief 75 tillæg F (22. sep 2026): linjens statustekst kommer nu fra
+ * `rest` (= antal - antal_faerdigmeldt), ikke fra `lagerstatus`. `rest`
+ * er kundens mangel: hvor mange flasker hun endnu ikke har fået.
+ * `lagerstatus` er derimod afledt af `reserveret_mod_lager` mod `antal`
+ * (aabneOrdrer.ts:268-271) — en lagerintern kendsgerning om hvor
+ * meget der er reserveret på hylderne. Ordet "delvis" antyder, at
+ * kunden har fået noget, mens hun i praksis kan have fået 0 (fx Vista
+ * Alegre Fine Ruby på AEvin.dk: rest=60 af 60, lagerstatus=delvis
+ * fordi noget er reserveret på lager, men kunden mangler alt).
  *
- * Rettet: status læses fra `lagerstatus` (parserens kanoniske signal),
- * som er "klar" / "delvis" / "restordre" per linje. Ordren tælles som
- * "restordre" hvis MINDST én linje er "restordre" eller "delvis" —
- * kunden venter stadig på noget. Kun når alle linjer er "klar" er
- * ordren klar.
+ * Ordre-status følger samme kilde: rest > 0 på mindst én linje →
+ * "Restordre" (kunden venter). Alle rest = 0 → "Klar til levering".
  *
  * Brief 48 §B: restNote nævner PRODUKTNAVN i stedet for linjetal.
  */
@@ -32,17 +32,29 @@ export interface OpenOrderLine {
   /** Produkt-beskrivelse fra products_lago (fallback: produktnr). */
   produktnavn: string;
   antal: number;
+  /** Brief 75 tillæg F: rest = antal - antal_faerdigmeldt, kundens mangel. */
+  rest: number;
   ej_faktureret: number;
-  /** "klar" | "delvis" | "restordre" — hvad kunden får (linje-niveau). */
-  lagerstatus: "klar" | "delvis" | "restordre";
   /**
-   * Brief 75 tillæg D-opfølgning (22. sep 2026): når `ej_faktureret === 0`
-   * er beløbet ikke informationen — LAGO's prisstruktur gør nul lovligt.
-   * Label mapper VISMA's salgstype + kampagne til et ord sælgeren kan
-   * sige højt til kunden. Se komputer i useOpenOrders for reglerne.
+   * Brief 75 tillæg F (22. sep 2026): sælgervendt statustekst afledt af
+   * rest. "Delvis" og "restordre" er lagerets sprog og er væk fra
+   * linjeniveau — de forvirrer, når kunden reelt har fået 0.
    *
-   * `null` = vis beløbet normalt (også hvis det er 0 kr uden forklaring —
-   * dét er den ærlige "vi ved ikke"-tilstand).
+   * - "afventer" (rest === antal): intet leveret; antallet står allerede
+   *   foran, så et rest-tal ville være dobbeltkonfekt.
+   * - "iRest" (0 < rest < antal): noget er leveret, noget mangler. UI
+   *   viser "N i rest" i rødt.
+   * - "klar" (rest === 0): kunden har fået alt.
+   */
+  kundeStatus: "afventer" | "iRest" | "klar";
+  /**
+   * Brief 75 tillæg D-opfølgning (22. sep 2026) · rev. tillæg F (22. sep 2026):
+   * når `ej_faktureret === 0` er beløbet ikke informationen — LAGO's
+   * prisstruktur gør nul lovligt. Label mapper VISMA's salgstype +
+   * kampagne til et ord sælgeren kan sige højt til kunden. UI viser
+   * ordet EFTER produktnavnet (fx "Vista Alegre Fine Ruby · kampagne"),
+   * ikke i beløbskolonnen — så "0 kr." forbliver et beløb og ikke
+   * bliver til volapyk. `null` = ingen tilføjelse; beløbet står alene.
    */
   belobLabel: string | null;
 }
@@ -93,6 +105,7 @@ interface RawRow {
   ordre_dato: string;
   linje_nr: string;
   antal: number | null;
+  rest: number | null;
   ej_faktureret: number | null;
   lagerstatus: string | null;
   status: string | null;
@@ -137,18 +150,18 @@ export function useOpenOrders(vismaCustomerNo: string | null | undefined) {
       const { data, error } = await supabase
         .from("open_orders_lago")
         .select(
-          "ordre_nr, ordre_dato, linje_nr, antal, ej_faktureret, lagerstatus, status, salgstype, kampagne, produktnr, oensket_leveringsdato",
+          "ordre_nr, ordre_dato, linje_nr, antal, rest, ej_faktureret, lagerstatus, status, salgstype, kampagne, produktnr, oensket_leveringsdato",
         )
         .eq("visma_customer_no", vismaCustomerNo as string)
         .order("ordre_dato", { ascending: false });
       if (error) throw error;
       const rows = (data ?? []) as RawRow[];
 
-      // Brief 75 tillæg A §1: rest-linjer = lagerstatus i {restordre, delvis}.
-      // "delvis" betyder noget er kommet men resten mangler — kunden venter
-      // stadig, så det tælles med.
-      const isRestLine = (r: RawRow) =>
-        r.lagerstatus === "restordre" || r.lagerstatus === "delvis";
+      // Brief 75 tillæg F: rest-linjer = rest > 0. Én linje med rest > 0
+      // betyder kunden venter på noget — uanset hvad lageret siger. En
+      // linje kan have lagerstatus=delvis (noget reserveret på hylderne),
+      // men rest = antal fordi intet er faerdigmeldt.
+      const isRestLine = (r: RawRow) => (r.rest ?? 0) > 0;
       // Brief 75 tillæg D §4: fetche produktnavn for ALLE linjer (ikke
       // kun rest), så folde-ud viser hvad hver linje er.
       const allProduktnr = new Set<string>();
@@ -199,30 +212,33 @@ export function useOpenOrders(vismaCustomerNo: string | null | undefined) {
         // faldende — det største produkt trækker øjet.
         const orderLines: OpenOrderLine[] = lines
           .map((l) => {
-            const rawStatus = l.lagerstatus;
-            const normalized: OpenOrderLine["lagerstatus"] =
-              rawStatus === "klar" || rawStatus === "delvis"
-                ? rawStatus
-                : "restordre";
             const produktnavn =
               (l.produktnr && navnByProduktnr.get(l.produktnr)) ||
               l.produktnr ||
               "(uden produktnr)";
             const ejFakt = Number(l.ej_faktureret ?? 0);
+            const antal = Number(l.antal ?? 0);
+            const rest = Number(l.rest ?? 0);
+            const kundeStatus: OpenOrderLine["kundeStatus"] =
+              rest <= 0 ? "klar" : rest >= antal ? "afventer" : "iRest";
             return {
               linje_nr: l.linje_nr,
               produktnr: l.produktnr,
               produktnavn,
-              antal: Number(l.antal ?? 0),
+              antal,
+              rest,
               ej_faktureret: ejFakt,
-              lagerstatus: normalized,
+              kundeStatus,
               belobLabel: beloebLabel(ejFakt, l.salgstype, l.kampagne),
             };
           })
           .sort((a, b) => {
-            const rank = (s: string) =>
-              s === "restordre" ? 0 : s === "delvis" ? 1 : 2;
-            const dr = rank(a.lagerstatus) - rank(b.lagerstatus);
+            // Brief 75 tillæg F: sortér afventende linjer først (kunden
+            // venter), dernæst dem hvor noget er leveret men noget mangler,
+            // dernæst klar. Sekundær: beløb faldende — det store trækker.
+            const rank = (s: OpenOrderLine["kundeStatus"]) =>
+              s === "afventer" ? 0 : s === "iRest" ? 1 : 2;
+            const dr = rank(a.kundeStatus) - rank(b.kundeStatus);
             if (dr !== 0) return dr;
             return b.ej_faktureret - a.ej_faktureret;
           });
@@ -238,17 +254,19 @@ export function useOpenOrders(vismaCustomerNo: string | null | undefined) {
       }
       out.sort((a, b) => (a.ordre_dato < b.ordre_dato ? 1 : -1));
 
-      // Brief 75 tillæg C: linje-baserede totaler. En Primeur der
-      // stadig venter holdes uden for iAlt; ankommet En Primeur
-      // (status=21 + lagerstatus=klar) tælles som klar — dét er
-      // aftalen fra tillæg B: den er landet, sig det højt.
+      // Brief 75 tillæg C · rev. tillæg F: linje-baserede totaler. En
+      // Primeur der stadig venter holdes uden for iAlt; ankommet En
+      // Primeur (status=21 + rest=0) tælles som klar — dét er aftalen
+      // fra tillæg B: den er landet, sig det højt. Klar/afventer måles
+      // nu på rest (kundens mangel), ikke lagerstatus (lagerets
+      // reservation).
       let klarRaw = 0;
       let afventerRaw = 0;
       let enPrimeurRaw = 0;
       for (const r of rows) {
         const belob = Number(r.ej_faktureret ?? 0);
         const isEnPrimeur = r.status === "21";
-        const isKlar = r.lagerstatus === "klar";
+        const isKlar = Number(r.rest ?? 0) <= 0;
         if (isEnPrimeur && !isKlar) {
           enPrimeurRaw += belob;
         } else if (isKlar) {

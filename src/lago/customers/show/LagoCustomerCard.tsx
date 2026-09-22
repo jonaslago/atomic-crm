@@ -815,12 +815,15 @@ export function AabneOrdrerSection({
 }
 
 /**
- * Brief 75 tillæg D §2+§4 (22. sep 2026) · én ordre-række med folde-ud.
+ * Brief 75 tillæg F (22. sep 2026) · to-linjers ordre-blok.
  *
- * Etiketten "Lagerstatus" er væk — chippen står alene, ellers er det
- * en etiket på en etiket. Restnoten "Vista Alegre + 2 andre" er væk
- * fordi den refererede til noget sælgeren ikke kunne komme til;
- * i stedet står "N linjer afventer" og hele ordren kan foldes ud.
+ * Tabelrækken fra tillæg D brækkede på 390 px (ordrenr over to linjer,
+ * dato over tre). Mobilreglen fra brief 50: ikke en tabelrække, en
+ * lille blok. Hierarki:
+ *   Linje 1: ▸ Ordre #34696                    [Restordre]
+ *   Linje 2: 8. sep · 3 linjer afventer          5.610 kr.
+ * Ordre-nr står som en reference (fg-3, t-meta) — det er det, sælgeren
+ * bruger sidst. Statuschippen og beløbet er højrestillet.
  */
 function OrderRow({
   order: o,
@@ -838,49 +841,47 @@ function OrderRow({
       ? `${o.restLineCount} ${o.restLineCount === 1 ? "linje" : "linjer"} afventer`
       : null;
   return (
-    <li className="flex flex-col gap-1.5">
+    <li className="flex flex-col gap-1">
       <button
         type="button"
         onClick={onToggle}
         disabled={!hasLines}
-        className="flex w-full items-center justify-between gap-3 text-left"
+        className="flex w-full flex-col gap-0.5 text-left"
       >
-        <div className="flex min-w-0 items-baseline gap-2">
-          {hasLines && (
-            <span
-              aria-hidden
-              className="w-3 shrink-0 text-[var(--fg-3)] tabular-nums"
-            >
-              {chevron}
-            </span>
-          )}
-          <span className="text-sm font-medium text-[var(--fg)]">
-            Ordre #{o.ordre_nr}
-          </span>
-          <span className="text-[length:var(--t-meta)] text-[var(--fg-3)]">
-            · {dateShort(o.ordre_dato)}
-          </span>
-          {restLabel && (
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex min-w-0 items-baseline gap-1.5">
+            {hasLines && (
+              <span
+                aria-hidden
+                className="w-3 shrink-0 text-[var(--fg-3)] tabular-nums"
+              >
+                {chevron}
+              </span>
+            )}
             <span className="text-[length:var(--t-meta)] text-[var(--fg-3)]">
-              · {restLabel}
+              Ordre #{o.ordre_nr}
             </span>
-          )}
-        </div>
-        <div className="flex items-center gap-3">
-          <span className="text-sm font-medium text-[var(--fg)] tabular-nums">
-            {kroner.format(o.total)}
-          </span>
+          </div>
           {o.status === "klar" ? (
             <StatusBadge variant="groen">Klar til levering</StatusBadge>
           ) : (
             <StatusBadge variant="gul">Restordre</StatusBadge>
           )}
         </div>
+        <div className="flex items-baseline justify-between gap-2 pl-[1.125rem]">
+          <span className="min-w-0 truncate text-[length:var(--t-sec)] text-[var(--fg-2)]">
+            {dateShort(o.ordre_dato)}
+            {restLabel && ` · ${restLabel}`}
+          </span>
+          <span className="shrink-0 text-sm text-[var(--fg)] tabular-nums">
+            {kroner.format(o.total)}
+          </span>
+        </div>
       </button>
       {o.oensketLevering && (
         <p
           className={cn(
-            "text-[length:var(--t-sec)]",
+            "text-[length:var(--t-sec)] pl-[1.125rem]",
             isPastDate(o.oensketLevering)
               ? "text-[var(--st-red-fg)] font-medium"
               : "text-[var(--fg-2)]",
@@ -915,50 +916,69 @@ function OrderLines({ lines }: { lines: OpenOrderLine[] }) {
   const visibleLines = showAll ? lines : lines.slice(0, ORDER_LINE_LIMIT);
   const hidden = lines.length - visibleLines.length;
   return (
-    <ul className="mt-1 flex flex-col gap-1 rounded-md bg-[var(--surface-1)] p-2 text-[length:var(--t-sec)]">
+    <ul className="mt-1 flex flex-col gap-2 rounded-md bg-[var(--surface-1)] p-2">
       {visibleLines.map((l) => (
-        <li
-          key={l.linje_nr}
-          className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-baseline gap-x-3"
-        >
-          <span className="min-w-0 truncate text-[var(--fg-2)]">
-            {l.antal ? (
-              <span className="tabular-nums text-[var(--fg-3)]">
-                {l.antal} stk.{" "}
-              </span>
-            ) : null}
-            {l.produktnavn}
-          </span>
-          {/* Brief 75 tillæg D-opfølgning (22. sep 2026): beløb pr. linje.
-              Er beløbet 0 og har LAGO's prisstruktur en forklaring
-              (prøve / promo / frie flasker / kampagne), står ordet i
-              stedet — så nul ikke ligner en fejl. Er beløbet 0 uden
-              forklaring (FRIFLM/tom uden kampagne), står "0 kr." —
-              det er den ærlige tilstand, ikke en beroligelse. */}
-          <span className="shrink-0 tabular-nums text-[var(--fg-2)]">
-            {l.belobLabel ?? kroner.format(l.ej_faktureret)}
-          </span>
-          <span className="shrink-0 text-[length:var(--t-meta)] text-[var(--fg-3)]">
-            {l.lagerstatus === "klar"
-              ? "klar"
-              : l.lagerstatus === "delvis"
-                ? "delvis"
-                : "afventer ankomst"}
-          </span>
-        </li>
+        <OrderLineRow key={l.linje_nr} line={l} />
       ))}
       {hidden > 0 && (
         <li>
           <button
             type="button"
             onClick={() => setShowAll(true)}
-            className="text-[var(--fg-2)] font-medium underline-offset-2 hover:underline"
+            className="text-[length:var(--t-sec)] text-[var(--fg-2)] font-medium underline-offset-2 hover:underline"
           >
             Vis alle {lines.length} →
           </button>
         </li>
       )}
     </ul>
+  );
+}
+
+/**
+ * Brief 75 tillæg F (22. sep 2026) · to-linjers ordrelinje-blok.
+ *
+ *   Vista Alegre Fine Ruby · kampagne
+ *   60 stk. · 0 kr. · afventer ankomst
+ *
+ * Linje 1: produktnavnet i fuld bredde (fg, normal vægt), ombrudt fremfor
+ * afkortet. Prisstruktur-labelen ("kampagne", "prøve", …) hænger EFTER
+ * navnet som en dæmpet tilføjelse — så "0 kr." forbliver et beløb.
+ * Linje 2: antal · beløb · statustekst, adskilt med `·`, alt i fg-2/t-sec.
+ * Statustekst kommer fra rest (kundens mangel), ikke lagerstatus.
+ */
+function OrderLineRow({ line: l }: { line: OpenOrderLine }) {
+  const isIRest = l.kundeStatus === "iRest";
+  const statusTekst =
+    l.kundeStatus === "klar"
+      ? "klar"
+      : l.kundeStatus === "afventer"
+        ? "afventer ankomst"
+        : `${l.rest} i rest`;
+  return (
+    <li className="flex flex-col gap-0.5">
+      <span className="text-[length:var(--t-sec)] text-[var(--fg)] break-words">
+        {l.produktnavn}
+        {l.belobLabel && (
+          <span className="text-[var(--fg-3)]"> · {l.belobLabel}</span>
+        )}
+      </span>
+      <span className="text-[length:var(--t-meta)] text-[var(--fg-2)]">
+        {l.antal ? (
+          <span className="tabular-nums">{l.antal} stk. · </span>
+        ) : null}
+        <span className="tabular-nums">{kroner.format(l.ej_faktureret)}</span>
+        <span> · </span>
+        <span
+          className={cn(
+            "tabular-nums",
+            isIRest && "text-[var(--st-red-fg)] font-medium",
+          )}
+        >
+          {statusTekst}
+        </span>
+      </span>
+    </li>
   );
 }
 
