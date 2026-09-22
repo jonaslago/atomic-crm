@@ -1,159 +1,223 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import {
-  CalendarCheck2,
-  CalendarClock,
-  Loader2,
-  MapPin,
-  Phone,
-  ShoppingBag,
-  Sparkles,
-  StickyNote,
-  Users,
-} from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { ArrowLeft, Loader2, MapPin } from "lucide-react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useTranslate } from "ra-core";
 
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Separator } from "@/components/ui/separator";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { Icon } from "@/lago/ui/Icon";
+import { LagoPullToRefresh } from "@/lago/ui/PullToRefresh";
+import { StatusBadge } from "@/lago/ui/StatusBadge";
+import { KreditSpaerreChip } from "@/lago/ui/KreditSpaerreChip";
+
+import { useHasSideRail } from "@/lago/layout/useHasSideRail";
+
+import { getLastListUrl } from "@/lago/layout/LagoScrollRestoration";
 
 import { fetchLagoCustomer, upsertLagoExtension } from "./dataAccess";
-import { ownershipOf } from "./fieldOwnership";
-import { QuickNoteForm } from "./QuickNoteForm";
-import { QuickTaskForm } from "./QuickTaskForm";
-import type {
-  CompanyNote,
-  ContactSummary,
-  LagoCustomerData,
-  OpenTask,
-  SaveExtensionInput,
-} from "./types";
-import { VismaBadge } from "./VismaBadge";
+import type { LagoCustomerData, SaveExtensionInput } from "./types";
+import { CustomerActionBar } from "./CustomerActionBar";
+import {
+  LagoCustomerCard,
+  HvadSketeDerSidstSection,
+  AabneOpfoelgningerSection,
+  AabneOrdrerSection,
+  OmsaetningSection,
+  KontaktpersonerSection,
+  StamdataSection,
+} from "./show/LagoCustomerCard";
 
-const SEGMENT_OPTIONS = ["A", "B", "C"] as const;
-type Segment = (typeof SEGMENT_OPTIONS)[number];
-
-function formatDate(value: string | null | undefined, locale = "da-DK") {
-  if (!value) return "—";
-  try {
-    return new Date(value).toLocaleDateString(locale, {
-      day: "numeric",
-      month: "long",
-      year: "numeric",
-    });
-  } catch {
-    return value;
-  }
-}
-
-function fullName(c: ContactSummary): string {
-  return [c.first_name, c.last_name].filter(Boolean).join(" ").trim() || "—";
-}
-
-function primaryEmail(c: ContactSummary): string | null {
-  return c.email_jsonb?.[0]?.email ?? null;
-}
-
-function primaryPhone(c: ContactSummary): string | null {
-  return c.phone_jsonb?.[0]?.number ?? null;
-}
-
-interface FieldRowProps {
-  label: string;
-  value: React.ReactNode;
-  fieldKey?: string;
-  icon?: React.ReactNode;
-}
-
-function FieldRow({ label, value, fieldKey, icon }: FieldRowProps) {
-  const ownership = fieldKey ? ownershipOf(fieldKey) : undefined;
-  const visma = ownership?.owner === "visma";
-  return (
-    <div className="flex items-start gap-3 py-2">
-      {icon && (
-        <div className="text-muted-foreground mt-0.5 flex-shrink-0">{icon}</div>
-      )}
-      <div className="flex-1 min-w-0">
-        <div className="text-muted-foreground flex items-center text-xs">
-          {label}
-          {visma && <VismaBadge size="xs" />}
-        </div>
-        <div className="text-sm break-words">{value || "—"}</div>
-      </div>
-    </div>
-  );
-}
-
-function SectionCard({
-  title,
-  icon,
-  children,
-  action,
-}: {
-  title: string;
-  icon: React.ReactNode;
-  children: React.ReactNode;
-  action?: React.ReactNode;
-}) {
-  return (
-    <Card className="mb-4">
-      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
-        <CardTitle className="flex items-center gap-2 text-base font-semibold">
-          <span className="text-muted-foreground">{icon}</span>
-          {title}
-        </CardTitle>
-        {action}
-      </CardHeader>
-      <CardContent>{children}</CardContent>
-    </Card>
-  );
-}
-
-function CustomerHeader({ data }: { data: LagoCustomerData }) {
+/**
+ * Brief 50 §2 (17. sep 2026) · mobil-header slået sammen til ét bånd.
+ *
+ * Før: navn stod i topbjælken OG i en KundeoverbikkSection lige under.
+ * Segmentet stod to gange. VISMA-nr på én linje, adressen sekvenserede.
+ * Fire linjers dobbeltkonfekt før sælgeren så noget nyt.
+ *
+ * Nu: én header med navn + segment højre, adresse (postnummer+by
+ * sammen), VISMA-nr, og sticky action-bar under. Kundeoverblik-
+ * sektionen renderes ikke længere på mobil — headeren ér overblikket.
+ */
+function MobileHeader({ data }: { data: LagoCustomerData }) {
   const translate = useTranslate();
   const navigate = useNavigate();
   const { company, extension } = data;
+  // Brief 50 §2 + §5: adressen skrives i én form overalt — postnummer
+  // og by som ét led ("6510 Gram"), · som separator ("Kongevej 8 ·
+  // 6510 Gram"). Ingen komma mellem postnummer og by.
+  const zipCity = [company.zipcode, company.city].filter(Boolean).join(" ");
+  const address = [company.address, zipCity].filter(Boolean).join(" · ");
+  // Brief 51 §3 (17. sep 2026): når man har rullet ned til Stamdata er
+  // der intet på skærmen der siger hvilken kunde man kigger på —
+  // action-baren viser tre knapper og ingen kontekst. IntersectionObserver
+  // på headeren siger til når den ikke længere er synlig; så viser vi
+  // navnet med småt over knapperne. Kun når klæbet — når headeren er
+  // synlig ville linjen være gentagelse.
+  const headerRef = useRef<HTMLDivElement | null>(null);
+  const [stickyActive, setStickyActive] = useState(false);
+  useEffect(() => {
+    const el = headerRef.current;
+    if (!el || typeof IntersectionObserver === "undefined") return;
+    const observer = new IntersectionObserver(
+      ([entry]) => setStickyActive(!entry.isIntersecting),
+      { rootMargin: "0px 0px -100% 0px" },
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
   return (
-    <div className="bg-background sticky top-0 z-10 border-b">
-      <div className="flex items-center gap-3 px-4 py-3">
+    <>
+      <div ref={headerRef} className="border-b bg-[var(--surface)]">
+        <div className="px-4 pt-3 pb-4">
+          {/* Tilbage-linje står alene så knappen har sin egen plads
+              og navnet får hele bredden. */}
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() =>
+              // Brief 74 tillæg A (22. sep 2026): tilbage til den
+              // filtrerede liste sælgeren kom fra, med scroll intakt.
+              // state.restoreListScroll fortæller LagoScrollRestoration
+              // at behandle denne PUSH som en tilbage-navigation
+              // (navigate(-1) kan ikke bruges: den falder ud af appen
+              // hvis kortet er åbnet direkte via bogmærke).
+              navigate(getLastListUrl(), {
+                state: { restoreListScroll: true },
+              })
+            }
+            className="-ml-2 mb-2"
+          >
+            <Icon icon={ArrowLeft} size="sm" />
+            {translate("ra.action.back", { _: "Tilbage" })}
+          </Button>
+          <div className="flex items-start justify-between gap-3">
+            <h1 className="min-w-0 flex-1 truncate text-[length:var(--t-title)] font-bold tracking-tight text-[var(--fg)]">
+              {company.name}
+            </h1>
+            {extension?.segment && (
+              <StatusBadge variant="neutral">
+                Segment {extension.segment}
+              </StatusBadge>
+            )}
+          </div>
+          {extension?.kreditspaerre === true && (
+            <div className="mt-2">
+              <KreditSpaerreChip spaerret={true} />
+            </div>
+          )}
+          {address && (
+            <p className="mt-2 flex items-center gap-1.5 text-[length:var(--t-sec)] text-[var(--fg-2)]">
+              <Icon
+                icon={MapPin}
+                size="sm"
+                className="shrink-0 text-[var(--fg-3)]"
+              />
+              <span className="truncate">{address}</span>
+            </p>
+          )}
+          {extension?.visma_customer_no && (
+            <p className="mt-1 text-[length:var(--t-meta)] text-[var(--fg-3)]">
+              VISMA {extension.visma_customer_no}
+            </p>
+          )}
+        </div>
+      </div>
+      {/* Brief 49 §4d: sticky action-bar med ugennemsigtig baggrund
+          — så sektioner ikke skinner igennem under scroll.
+          Brief 51 §3 (17. sep 2026): kundenavnet med småt over
+          knapperne når headeren ikke længere er synlig. Kun mens
+          bjælken klæber — ellers gentagelse. */}
+      <div className="sticky top-0 z-10 border-b bg-[var(--surface)] px-4 py-3">
+        {stickyActive && (
+          <p className="mb-1 truncate text-[length:var(--t-meta)] text-[var(--fg-3)]">
+            {company.name}
+          </p>
+        )}
+        <CustomerActionBar
+          companyId={company.id}
+          companyName={company.name}
+          address={company.address ?? null}
+          zipcode={company.zipcode ?? null}
+          city={company.city ?? null}
+          phoneNumber={company.phone_number ?? null}
+          hasSideRail={false}
+        />
+      </div>
+    </>
+  );
+}
+
+/**
+ * Brief 49 §3 (17. sep 2026) · laptop-topbånd. ÉT bånd med navn,
+ * badges, handlinger og adresse+CVR — ikke to. Vores tidligere layout
+ * havde et bånd med navn/VISMA og endnu et bånd kun til Naviger/Ring,
+ * som stod alene i 1300 px tomhed. Nu er alt samlet, handlingerne
+ * højrestillet.
+ */
+function LaptopHeader({ data }: { data: LagoCustomerData }) {
+  const translate = useTranslate();
+  const navigate = useNavigate();
+  const { company, extension } = data;
+  // Brief 50 §2 (17. sep 2026): adresse i én form overalt —
+  // "Adelgade 46 · 5400 Bogense", postnummer+by som ét led.
+  // Brief 53 tillæg A §1 (17. sep 2026): CVR ud af topbåndet — den
+  // hører hjemme i Stamdata som en almindelig række, ikke i header.
+  const zipCity = [company.zipcode, company.city].filter(Boolean).join(" ");
+  const addressLine = [company.address, zipCity].filter(Boolean).join(" · ");
+  return (
+    <div className="border-b bg-[var(--surface)]">
+      <div className="mx-auto max-w-screen-2xl px-6 py-4">
         <Button
           variant="ghost"
           size="sm"
-          onClick={() => navigate("/companies")}
+          onClick={() =>
+            // Brief 74 tillæg A (22. sep 2026): tilbage til dén liste.
+            navigate(getLastListUrl(), {
+              state: { restoreListScroll: true },
+            })
+          }
+          className="mb-2 -ml-2"
         >
-          ← {translate("ra.action.back", { _: "Tilbage" })}
+          <Icon icon={ArrowLeft} size="sm" />
+          {translate("ra.action.back", { _: "Tilbage til kundelisten" })}
         </Button>
-        <div className="flex-1 min-w-0">
-          <h1 className="truncate text-lg font-semibold sm:text-xl">
-            {company.name}
-          </h1>
-          <div className="text-muted-foreground flex items-center gap-2 text-xs">
-            {extension?.visma_customer_no ? (
-              <span>
-                {translate("lago.customer.visma_no")}:{" "}
-                <span className="font-mono">{extension.visma_customer_no}</span>
-              </span>
-            ) : (
-              <span className="italic">
-                {translate("lago.customer.no_visma_no")}
-              </span>
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-3">
+              <h1 className="text-[length:var(--t-title)] font-bold tracking-tight text-[var(--fg)]">
+                {company.name}
+              </h1>
+              {extension?.segment && (
+                <StatusBadge variant="neutral">
+                  Segment {extension.segment}
+                </StatusBadge>
+              )}
+              {extension?.distrikt && (
+                <StatusBadge variant="neutral">
+                  Distrikt {extension.distrikt}
+                </StatusBadge>
+              )}
+              <KreditSpaerreChip spaerret={extension?.kreditspaerre} />
+            </div>
+            {addressLine && (
+              <p className="mt-1 text-[length:var(--t-sec)] text-[var(--fg-2)]">
+                {addressLine}
+              </p>
             )}
-            {extension?.segment && (
-              <Badge variant="secondary" className="font-normal">
-                {translate("lago.customer.segment")} {extension.segment}
-              </Badge>
-            )}
+          </div>
+          <div className="shrink-0">
+            {/* hasSideRail=false gør at Registrér-knappen kommer med i
+                CustomerActionBar — vi vil have alle tre knapper i
+                topbåndet på laptop. */}
+            <CustomerActionBar
+              companyId={company.id}
+              companyName={company.name}
+              address={company.address ?? null}
+              zipcode={company.zipcode ?? null}
+              city={company.city ?? null}
+              phoneNumber={company.phone_number ?? null}
+              hasSideRail={false}
+            />
           </div>
         </div>
       </div>
@@ -161,400 +225,86 @@ function CustomerHeader({ data }: { data: LagoCustomerData }) {
   );
 }
 
-function CoreInfoSection({ data }: { data: LagoCustomerData }) {
-  const translate = useTranslate();
-  const { company } = data;
-  const address = [
-    company.address,
-    company.zipcode,
-    company.city,
-    company.country,
-  ]
-    .filter(Boolean)
-    .join(", ");
-  return (
-    <SectionCard
-      title={translate("lago.customer.sections.core_info")}
-      icon={<MapPin className="h-4 w-4" />}
-    >
-      <FieldRow
-        label={translate("resources.companies.fields.address")}
-        value={address}
-        fieldKey="address"
-      />
-      <FieldRow
-        label={translate("resources.companies.fields.phone_number")}
-        value={
-          company.phone_number ? (
-            <a
-              href={`tel:${company.phone_number}`}
-              className="text-primary underline-offset-2 hover:underline"
-            >
-              {company.phone_number}
-            </a>
-          ) : null
-        }
-        fieldKey="phone_number"
-        icon={<Phone className="h-4 w-4" />}
-      />
-      <FieldRow
-        label={translate("resources.companies.fields.tax_identifier")}
-        value={company.tax_identifier}
-        fieldKey="tax_identifier"
-      />
-      <FieldRow
-        label={translate("resources.companies.fields.sector")}
-        value={company.sector}
-        fieldKey="sector"
-      />
-      <FieldRow
-        label={translate("resources.companies.fields.website")}
-        value={
-          company.website ? (
-            <a
-              href={
-                company.website.startsWith("http")
-                  ? company.website
-                  : `https://${company.website}`
-              }
-              target="_blank"
-              rel="noreferrer"
-              className="text-primary underline-offset-2 hover:underline"
-            >
-              {company.website}
-            </a>
-          ) : null
-        }
-        fieldKey="website"
-      />
-    </SectionCard>
-  );
-}
-
-function LastVisitSection({
-  data,
-  onUpdate,
-  saving,
-}: {
+interface ZoneProps {
   data: LagoCustomerData;
   onUpdate: (input: SaveExtensionInput) => void;
   saving: boolean;
-}) {
-  const translate = useTranslate();
-  const ext = data.extension;
-  const markVisitToday = () =>
-    onUpdate({
-      company_id: data.company.id,
-      last_visit_at: new Date().toISOString(),
-    });
-
-  return (
-    <SectionCard
-      title={translate("lago.customer.sections.last_visit")}
-      icon={<CalendarCheck2 className="h-4 w-4" />}
-      action={
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={markVisitToday}
-          disabled={saving}
-        >
-          {saving ? <Loader2 className="mr-2 h-3 w-3 animate-spin" /> : null}
-          {translate("lago.customer.actions.mark_visited_today")}
-        </Button>
-      }
-    >
-      <FieldRow
-        label={translate("lago.customer.fields.last_visit_at")}
-        value={ext?.last_visit_at ? formatDate(ext.last_visit_at) : null}
-        fieldKey="last_visit_at"
-      />
-      <FieldRow
-        label={translate("lago.customer.fields.next_visit_planned")}
-        value={
-          ext?.next_visit_planned ? formatDate(ext.next_visit_planned) : null
-        }
-        fieldKey="next_visit_planned"
-        icon={<CalendarClock className="h-4 w-4" />}
-      />
-    </SectionCard>
-  );
 }
 
-function OpenTasksSection({
-  tasks,
-  primaryContact,
-  invalidateKey,
-}: {
-  tasks: OpenTask[];
-  primaryContact: ContactSummary | undefined;
-  invalidateKey: ReadonlyArray<unknown>;
-}) {
-  const translate = useTranslate();
-  const title =
-    tasks.length === 0
-      ? translate("lago.customer.sections.open_followups")
-      : `${translate("lago.customer.sections.open_followups")} (${tasks.length})`;
+/**
+ * Brief 49 §3 (17. sep 2026) · to spalter på laptop.
+ *
+ *   Venstre ~65 % — forløbet:
+ *     Aktivitetshistorik · Åbne opfølgninger · Åbne ordrer
+ *
+ *   Højre ~35 % — fakta:
+ *     Omsætning · Kontaktpersoner · Stamdata
+ *
+ * Registrér er i topbåndet, så højre spalte bærer FAKTA, ikke en knap.
+ * Under 1024 px falder det sammen til mobilens ene spalte via
+ * `PortraitFallback` (brug af `LagoCustomerCard` med skillelinjer).
+ */
+function LandscapeZones({ data }: ZoneProps) {
   return (
-    <SectionCard title={title} icon={<Sparkles className="h-4 w-4" />}>
-      <QuickTaskForm
-        primaryContact={primaryContact}
-        invalidateKey={invalidateKey}
-      />
-      {tasks.length === 0 ? (
-        <p className="text-muted-foreground py-2 text-sm">
-          {translate("lago.customer.empty.no_open_tasks")}
-        </p>
-      ) : (
-        <ul className="space-y-2">
-          {tasks.map((t) => (
-            <li key={t.id} className="border-b pb-2 last:border-b-0 last:pb-0">
-              <div className="text-sm font-medium">{t.text}</div>
-              <div className="text-muted-foreground text-xs">
-                {t.due_date ? formatDate(t.due_date) : "—"}
-                {t.type && <span className="ml-2">· {t.type}</span>}
-              </div>
-            </li>
-          ))}
-        </ul>
-      )}
-    </SectionCard>
-  );
-}
-
-function ContactsSection({ contacts }: { contacts: ContactSummary[] }) {
-  const translate = useTranslate();
-  if (contacts.length === 0) {
-    return (
-      <SectionCard
-        title={translate("lago.customer.sections.contacts")}
-        icon={<Users className="h-4 w-4" />}
-      >
-        <p className="text-muted-foreground py-2 text-sm">
-          {translate("lago.customer.empty.no_contacts")}
-        </p>
-      </SectionCard>
-    );
-  }
-  return (
-    <SectionCard
-      title={`${translate("lago.customer.sections.contacts")} (${contacts.length})`}
-      icon={<Users className="h-4 w-4" />}
-    >
-      <ul className="space-y-3">
-        {contacts.map((c) => {
-          const email = primaryEmail(c);
-          const phone = primaryPhone(c);
-          return (
-            <li key={c.id} className="border-b pb-3 last:border-b-0 last:pb-0">
-              <div className="text-sm font-medium">{fullName(c)}</div>
-              {c.title && (
-                <div className="text-muted-foreground text-xs">{c.title}</div>
-              )}
-              <div className="mt-1 flex flex-col gap-1 text-xs sm:flex-row sm:gap-3">
-                {email && (
-                  <a
-                    href={`mailto:${email}`}
-                    className="text-primary underline-offset-2 hover:underline"
-                  >
-                    {email}
-                  </a>
-                )}
-                {phone && (
-                  <a
-                    href={`tel:${phone}`}
-                    className="text-primary underline-offset-2 hover:underline"
-                  >
-                    {phone}
-                  </a>
-                )}
-              </div>
-            </li>
-          );
-        })}
-      </ul>
-    </SectionCard>
-  );
-}
-
-function contactNameById(
-  contacts: ContactSummary[],
-  id: number | null | undefined,
-): string | null {
-  if (id == null) return null;
-  const c = contacts.find((x) => x.id === id);
-  if (!c) return null;
-  return (
-    [c.first_name, c.last_name].filter(Boolean).join(" ").trim() || `#${c.id}`
-  );
-}
-
-function NotesSection({
-  notes,
-  contacts,
-  companyId,
-  invalidateKey,
-}: {
-  notes: CompanyNote[];
-  contacts: ContactSummary[];
-  companyId: number;
-  invalidateKey: ReadonlyArray<unknown>;
-}) {
-  const translate = useTranslate();
-  return (
-    <SectionCard
-      title={translate("lago.customer.sections.recent_notes")}
-      icon={<StickyNote className="h-4 w-4" />}
-    >
-      <QuickNoteForm
-        companyId={companyId}
-        contacts={contacts}
-        invalidateKey={invalidateKey}
-      />
-      {notes.length === 0 ? (
-        <p className="text-muted-foreground py-2 text-sm">
-          {translate("lago.customer.empty.no_notes")}
-        </p>
-      ) : (
-        <ul className="space-y-3">
-          {notes.map((n) => {
-            const contactName = contactNameById(contacts, n.contact_id);
-            return (
-              <li
-                key={n.id}
-                className="border-b pb-3 last:border-b-0 last:pb-0"
-              >
-                <div className="text-muted-foreground flex items-center gap-2 text-xs">
-                  <span>{formatDate(n.created_at)}</span>
-                  {contactName && (
-                    <Badge variant="outline" className="font-normal">
-                      {translate("lago.customer.note.about_contact", {
-                        name: contactName,
-                      })}
-                    </Badge>
-                  )}
-                </div>
-                <div className="text-sm whitespace-pre-wrap">{n.text}</div>
-              </li>
-            );
-          })}
-        </ul>
-      )}
-    </SectionCard>
-  );
-}
-
-function PurchaseHistoryPlaceholder() {
-  const translate = useTranslate();
-  return (
-    <SectionCard
-      title={translate("lago.customer.sections.purchase_history")}
-      icon={<ShoppingBag className="h-4 w-4" />}
-    >
-      <div className="text-muted-foreground rounded-md border border-dashed p-4 text-center text-sm">
-        {translate("lago.customer.empty.purchase_history_pending_visma")}
-      </div>
-    </SectionCard>
-  );
-}
-
-function CrmFieldsSection({
-  data,
-  onUpdate,
-  saving,
-}: {
-  data: LagoCustomerData;
-  onUpdate: (input: SaveExtensionInput) => void;
-  saving: boolean;
-}) {
-  const translate = useTranslate();
-  const ext = data.extension;
-  const [vismaNo, setVismaNo] = useState(ext?.visma_customer_no ?? "");
-  const [openingHours, setOpeningHours] = useState(ext?.opening_hours ?? "");
-  const [segment, setSegment] = useState<Segment | "">(ext?.segment ?? "");
-
-  const save = () =>
-    onUpdate({
-      company_id: data.company.id,
-      visma_customer_no: vismaNo.trim() || null,
-      opening_hours: openingHours.trim() || null,
-      segment: (segment as Segment) || null,
-    });
-
-  return (
-    <SectionCard
-      title={translate("lago.customer.sections.crm_fields")}
-      icon={<Sparkles className="h-4 w-4" />}
-    >
-      <div className="space-y-4">
-        <div className="space-y-2">
-          <Label htmlFor="visma_no" className="flex items-center text-xs">
-            {translate("lago.customer.fields.visma_customer_no")}
-            <VismaBadge size="xs" />
-          </Label>
-          <Input
-            id="visma_no"
-            value={vismaNo}
-            onChange={(e) => setVismaNo(e.target.value)}
-            placeholder="fx 10042"
+    <div className="mx-auto max-w-screen-2xl px-6 py-6">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,65fr)_minmax(0,35fr)]">
+        <main className="flex flex-col">
+          <HvadSketeDerSidstSection data={data} layout="laptop" />
+          <AabneOpfoelgningerSection
+            tasks={data.openTasks}
+            contacts={data.contacts}
+            layout="laptop"
           />
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="segment" className="text-xs">
-            {translate("lago.customer.fields.segment")}
-          </Label>
-          <Select
-            value={segment}
-            onValueChange={(v) => setSegment(v as Segment | "")}
-          >
-            <SelectTrigger id="segment">
-              <SelectValue
-                placeholder={translate(
-                  "lago.customer.fields.segment_placeholder",
-                )}
-              />
-            </SelectTrigger>
-            <SelectContent>
-              {SEGMENT_OPTIONS.map((s) => (
-                <SelectItem key={s} value={s}>
-                  {s}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="opening_hours" className="text-xs">
-            {translate("lago.customer.fields.opening_hours")}
-          </Label>
-          <Input
-            id="opening_hours"
-            value={openingHours}
-            onChange={(e) => setOpeningHours(e.target.value)}
-            placeholder={translate(
-              "lago.customer.fields.opening_hours_placeholder",
-            )}
+          <AabneOrdrerSection extension={data.extension} layout="laptop" />
+        </main>
+        <aside className="flex flex-col">
+          <OmsaetningSection extension={data.extension} layout="laptop" />
+          <KontaktpersonerSection
+            companyId={data.company.id}
+            companyName={data.company.name}
+            contacts={data.contacts}
+            layout="laptop"
           />
-        </div>
-        <Separator />
-        <Button onClick={save} disabled={saving} className="w-full sm:w-auto">
-          {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-          {translate("lago.customer.actions.save_crm_fields")}
-        </Button>
+          <StamdataSection data={data} layout="laptop" />
+        </aside>
       </div>
-    </SectionCard>
+    </div>
+  );
+}
+
+function PortraitFallback({ data }: ZoneProps) {
+  // Brief 45 §3: Registrér ligger i CustomerActionBar (sticky top). Én
+  // lang kolonne med Stitchs otte sektioner — accordion + separate
+  // paneler er fjernet, det var netop det brief 45 skulle rette.
+  //
+  // Brief 50 §5 (17. sep 2026): scroll-padding-top matcher den sticky
+  // action-bars højde (~72 px = 44 knap + 12+12 padding + 4 border) så
+  // when programmatic scroll/jump lander på en sektion, står
+  // sektionsoverskriften UNDER bjælken — ikke under den. Sektioner
+  // bærer scroll-mt så in-page anchor-jumps ryddes for det samme.
+  return (
+    <div
+      className="px-4 py-4 [&_section]:scroll-mt-20"
+      style={{ scrollPaddingTop: "72px" }}
+    >
+      <LagoCustomerCard data={data} />
+    </div>
   );
 }
 
 /**
- * Mobile-first kerne-kundebillede for sælgere på iPad (Domain-brief 1).
- * Used as the show component for the `companies` resource via the
- * `companyShow` prop on `<CRM>` in App.tsx.
+ * LAGO customer page — Domain-brief 3 mid-fi refinement of the kerne-
+ * kundebillede. Landscape (>= 1024px) shows three zones: info-rail (left),
+ * combined timeline + salgsudvikling (centre), and a fixed registration
+ * column (right). Portrait falls back to a single-column view with an
+ * accordion for info-cards and a sticky action bar that expands into the
+ * full registration surface.
  */
 export function LagoCustomerShow() {
   const params = useParams<{ id: string }>();
   const translate = useTranslate();
   const queryClient = useQueryClient();
+  const hasSideRail = useHasSideRail();
   const companyId = params.id ? Number(params.id) : NaN;
 
   const query = useQuery({
@@ -582,7 +332,7 @@ export function LagoCustomerShow() {
   if (query.isLoading) {
     return (
       <div className="flex items-center gap-2 p-6 text-sm text-muted-foreground">
-        <Loader2 className="h-4 w-4 animate-spin" />
+        <Icon icon={Loader2} className="animate-spin" />
         {translate("lago.customer.loading")}
       </div>
     );
@@ -600,38 +350,27 @@ export function LagoCustomerShow() {
   }
 
   const data = query.data;
-  const primaryContact = data.contacts[0];
-  const invalidateKey: ReadonlyArray<unknown> = ["lago-customer", companyId];
+  const zoneProps: ZoneProps = {
+    data,
+    onUpdate: mutation.mutate,
+    saving: mutation.isPending,
+  };
 
   return (
-    <div className="max-w-3xl">
-      <CustomerHeader data={data} />
-      <div className="px-4 py-4">
-        <CoreInfoSection data={data} />
-        <LastVisitSection
-          data={data}
-          onUpdate={mutation.mutate}
-          saving={mutation.isPending}
-        />
-        <OpenTasksSection
-          tasks={data.openTasks}
-          primaryContact={primaryContact}
-          invalidateKey={invalidateKey}
-        />
-        <ContactsSection contacts={data.contacts} />
-        <NotesSection
-          notes={data.notes}
-          contacts={data.contacts}
-          companyId={data.company.id}
-          invalidateKey={invalidateKey}
-        />
-        <CrmFieldsSection
-          data={data}
-          onUpdate={mutation.mutate}
-          saving={mutation.isPending}
-        />
-        <PurchaseHistoryPlaceholder />
+    <LagoPullToRefresh>
+      <div>
+        {hasSideRail ? (
+          <>
+            <LaptopHeader data={data} />
+            <LandscapeZones {...zoneProps} />
+          </>
+        ) : (
+          <>
+            <MobileHeader data={data} />
+            <PortraitFallback {...zoneProps} />
+          </>
+        )}
       </div>
-    </div>
+    </LagoPullToRefresh>
   );
 }
