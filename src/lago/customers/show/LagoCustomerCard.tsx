@@ -735,6 +735,7 @@ export function AabneOrdrerSection({
     klar: 0,
     afventer: 0,
     enPrimeur: 0,
+    paaReservation: 0,
     iAlt: 0,
   };
   // Brief 75 tillæg D §4 (22. sep 2026): folde-ud pr. ordre. Kun de
@@ -836,10 +837,15 @@ function OrderRow({
 }) {
   const hasLines = o.lines.length > 0;
   const chevron = open ? "▾" : "▸";
-  const restLabel =
-    o.restLineCount > 0
-      ? `${o.restLineCount} ${o.restLineCount === 1 ? "linje" : "linjer"} afventer`
-      : null;
+  // Brief 75 tillæg G: reservations-ordrer bruger antal-baseret
+  // sammendrag ("30 stk. på reservation") — det er samtalen med
+  // kunden, ikke kroner. Restordrer bruger linje-tælling som før.
+  const summaryLabel =
+    o.status === "reservation"
+      ? `${o.reservationAntal} stk. på reservation`
+      : o.restLineCount > 0
+        ? `${o.restLineCount} ${o.restLineCount === 1 ? "linje" : "linjer"} afventer`
+        : null;
   return (
     <li className="flex flex-col gap-1">
       <button
@@ -862,7 +868,9 @@ function OrderRow({
               Ordre #{o.ordre_nr}
             </span>
           </div>
-          {o.status === "klar" ? (
+          {o.status === "reservation" ? (
+            <StatusBadge variant="neutral">På reservation</StatusBadge>
+          ) : o.status === "klar" ? (
             <StatusBadge variant="groen">Klar til levering</StatusBadge>
           ) : (
             <StatusBadge variant="gul">Restordre</StatusBadge>
@@ -871,7 +879,7 @@ function OrderRow({
         <div className="flex items-baseline justify-between gap-2 pl-[1.125rem]">
           <span className="min-w-0 truncate text-[length:var(--t-sec)] text-[var(--fg-2)]">
             {dateShort(o.ordre_dato)}
-            {restLabel && ` · ${restLabel}`}
+            {summaryLabel && ` · ${summaryLabel}`}
           </span>
           <span className="shrink-0 text-sm text-[var(--fg)] tabular-nums">
             {kroner.format(o.total)}
@@ -973,18 +981,20 @@ function OrderLines({
  * Statustekst kommer fra rest (kundens mangel), ikke lagerstatus.
  */
 function OrderLineRow({ line: l }: { line: OpenOrderLine }) {
-  // Brief 78 tillæg A §1 (22. sep 2026): rest er nu antal - reserveret
-  // (VISMAs "I rest"). Statustekst med tre tilfælde:
+  // Brief 78 tillæg A §1 · rev. brief 75 tillæg G (22. sep 2026):
+  //   - reservation (levering=5): "på reservation"
   //   - klar (reserveret ≥ antal): "klar"
   //   - delvis (0 < reserveret < antal): "N klar, M mangler" i rødt
   //   - afventer (reserveret = 0): "afventer ankomst"
   const isDelvis = l.kundeStatus === "delvis";
   const statusTekst =
-    l.kundeStatus === "klar"
-      ? "klar"
-      : l.kundeStatus === "afventer"
-        ? "afventer ankomst"
-        : `${l.reserveret} klar, ${l.rest} mangler`;
+    l.kundeStatus === "reservation"
+      ? "på reservation"
+      : l.kundeStatus === "klar"
+        ? "klar"
+        : l.kundeStatus === "afventer"
+          ? "afventer ankomst"
+          : `${l.reserveret} klar, ${l.rest} mangler`;
   return (
     <li className="flex flex-col gap-0.5">
       <span className="text-[length:var(--t-sec)] text-[var(--fg)] break-words">
@@ -1052,6 +1062,18 @@ function OrderTotals({ totals }: { totals: OpenOrdersTotals }) {
           <span className="text-[var(--fg-3)]">En Primeur</span>
           <span className="font-medium text-[var(--fg-3)] tabular-nums">
             {kroner.format(totals.enPrimeur)}
+          </span>
+        </div>
+      )}
+      {/* Brief 75 tillæg G (22. sep 2026): reservationer holdes uden
+          for I alt-summen (samme princip som En Primeur i tillæg C).
+          Kunden har bedt om varerne, hun trækker efter behov — det er
+          ikke en akut forpligtelse. */}
+      {totals.paaReservation > 0 && (
+        <div className="mt-2 flex items-baseline justify-between gap-3">
+          <span className="text-[var(--fg-3)]">På reservation</span>
+          <span className="font-medium text-[var(--fg-3)] tabular-nums">
+            {kroner.format(totals.paaReservation)}
           </span>
         </div>
       )}

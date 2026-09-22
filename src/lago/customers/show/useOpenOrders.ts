@@ -41,16 +41,17 @@ export interface OpenOrderLine {
   reserveret: number;
   ej_faktureret: number;
   /**
-   * Brief 75 tillæg F · rev. brief 78 tillæg A §1 (22. sep 2026):
-   * sælgervendt statustekst afledt af rest (I rest = antal −
-   * reserveret_mod_lager).
+   * Brief 75 tillæg F · rev. brief 78 tillæg A §1 og tillæg G (22. sep 2026):
+   * sælgervendt statustekst.
    *
-   * - "afventer" (reserveret = 0): intet reserveret, intet leveret.
-   * - "delvis"   (0 < reserveret < antal): nogle flasker klar på
-   *   lager, resten mangler. UI viser "N klar, M mangler".
-   * - "klar"     (reserveret ≥ antal): alt reserveret, kan sendes.
+   * - "reservation" (levering=5): varen står på hylden til senere træk.
+   *   UI viser "på reservation" (blå), ingen "klar"/"afventer".
+   * - "afventer"    (reserveret = 0): intet reserveret, intet leveret.
+   * - "delvis"      (0 < reserveret < antal): nogle flasker klar,
+   *   resten mangler. UI viser "N klar, M mangler".
+   * - "klar"        (reserveret ≥ antal): alt reserveret, kan sendes.
    */
-  kundeStatus: "afventer" | "delvis" | "klar";
+  kundeStatus: "reservation" | "afventer" | "delvis" | "klar";
   /**
    * Brief 75 tillæg D-opfølgning · rev. tillæg F: label for 0-kr linjer
    * (prøve/promo/frie flasker/kampagne). Vises EFTER produktnavnet,
@@ -63,9 +64,13 @@ export interface OpenOrderSummary {
   ordre_nr: string;
   ordre_dato: string;
   total: number;
-  status: "klar" | "restordre";
+  status: "klar" | "restordre" | "reservation";
   /** Antal linjer der afventer i denne ordre (rest > 0). */
   restLineCount: number;
+  /** Brief 75 tillæg G (22. sep 2026): sum af antal på reservations-
+   *  linjer. Sammendrag over reservationer skal tale om ANTAL, ikke
+   *  kroner: "30 stk. på reservation". */
+  reservationAntal: number;
   /** Brief 78 tillæg A §2: alle datoer er ØNSKEDE — der findes ingen
    *  bekræftet leveringsdato i OSR-udtrækket. Ordet "Ønsket" skal
    *  altid stå. */
@@ -95,6 +100,11 @@ export interface OpenOrdersTotals {
   klar: number;
   afventer: number;
   enPrimeur: number;
+  /** Brief 75 tillæg G (22. sep 2026): sum af beløb på reservations-
+   *  ordrer (levering=5). Holdes uden for `iAlt` — en reservation er
+   *  ikke en akut forpligtelse. Kundens instruks: varerne står klar,
+   *  hun trækker efter behov. */
+  paaReservation: number;
   iAlt: number;
 }
 
@@ -113,6 +123,7 @@ interface RawRow {
   ej_faktureret: number | null;
   lagerstatus: string | null;
   status: string | null;
+  levering: string | null;
   salgstype: string | null;
   kampagne: string | null;
   produktnr: string | null;
@@ -220,7 +231,7 @@ export function useOpenOrders(vismaCustomerNo: string | null | undefined) {
       const { data, error } = await supabase
         .from("open_orders_lago")
         .select(
-          "ordre_nr, ordre_dato, linje_nr, antal, rest, reserveret_mod_lager, ej_faktureret, lagerstatus, status, salgstype, kampagne, produktnr, oensket_leveringsdato, note, undtages_lagerhaandtering",
+          "ordre_nr, ordre_dato, linje_nr, antal, rest, reserveret_mod_lager, ej_faktureret, lagerstatus, status, levering, salgstype, kampagne, produktnr, oensket_leveringsdato, note, undtages_lagerhaandtering",
         )
         .eq("visma_customer_no", vismaCustomerNo as string)
         .order("ordre_dato", { ascending: false });
@@ -323,8 +334,13 @@ export function useOpenOrders(vismaCustomerNo: string | null | undefined) {
                 ? overtag
                 : Number(l.reserveret_mod_lager ?? 0);
             const rest = Math.max(0, antal - reserveret);
-            const kundeStatus: OpenOrderLine["kundeStatus"] =
-              reserveret >= antal
+            // Brief 75 tillæg G: reservationer (levering=5) er varer,
+            // kunden trækker efter behov — ikke noget hun venter på.
+            // Overrider rest/reservation-baseret status.
+            const erReservation = l.levering === "5";
+            const kundeStatus: OpenOrderLine["kundeStatus"] = erReservation
+              ? "reservation"
+              : reserveret >= antal
                 ? "klar"
                 : reserveret > 0
                   ? "delvis"
@@ -347,10 +363,17 @@ export function useOpenOrders(vismaCustomerNo: string | null | undefined) {
             };
           })
           .sort((a, b) => {
-            // Sortér afventende først (kunden venter helt), dernæst
-            // delvis, dernæst klar. Sekundær: beløb faldende.
+            // Brief 75 tillæg G: reservationer sorteres først (kræver
+            // handling — sælgeren kan spørge om træk), dernæst afventer,
+            // dernæst delvis, dernæst klar. Sekundær: beløb faldende.
             const rank = (s: OpenOrderLine["kundeStatus"]) =>
-              s === "afventer" ? 0 : s === "delvis" ? 1 : 2;
+              s === "reservation"
+                ? 0
+                : s === "afventer"
+                  ? 1
+                  : s === "delvis"
+                    ? 2
+                    : 3;
             const dr = rank(a.kundeStatus) - rank(b.kundeStatus);
             if (dr !== 0) return dr;
             return b.ej_faktureret - a.ej_faktureret;
@@ -362,13 +385,37 @@ export function useOpenOrders(vismaCustomerNo: string | null | undefined) {
         // afventer" uden noget under.
         if (orderLines.length === 0 && tillaegLines.length === 0) continue;
 
-        const restLines = orderLines.filter((l) => l.rest > 0);
+        // Brief 75 tillæg G: reservations-linjer tælles ikke som
+        // restordre (kunden venter ikke på dem). En ordre er
+        // "reservation" hvis ALLE varelinjer er reservationer;
+        // ellers "restordre" hvis der er rest > 0 på en ikke-
+        // reservation-linje; ellers "klar".
+        const reservationLines = orderLines.filter(
+          (l) => l.kundeStatus === "reservation",
+        );
+        const nonReservationLines = orderLines.filter(
+          (l) => l.kundeStatus !== "reservation",
+        );
+        const restLines = nonReservationLines.filter((l) => l.rest > 0);
+        const alleErReservation =
+          orderLines.length > 0 &&
+          reservationLines.length === orderLines.length;
+        const orderStatus: OpenOrderSummary["status"] = alleErReservation
+          ? "reservation"
+          : restLines.length > 0
+            ? "restordre"
+            : "klar";
+        const reservationAntal = reservationLines.reduce(
+          (s, l) => s + l.antal,
+          0,
+        );
         out.push({
           ordre_nr,
           ordre_dato: synligeLines[0]?.ordre_dato ?? lines[0].ordre_dato,
           total,
-          status: restLines.length > 0 ? "restordre" : "klar",
+          status: orderStatus,
           restLineCount: restLines.length,
+          reservationAntal,
           oensketLevering,
           note,
           lines: orderLines,
@@ -377,13 +424,15 @@ export function useOpenOrders(vismaCustomerNo: string | null | undefined) {
       }
       out.sort((a, b) => (a.ordre_dato < b.ordre_dato ? 1 : -1));
 
-      // Brief 75 tillæg C · rev. brief 78 tillæg A §1: totaler måles nu
-      // på reservation (VISMAs "I rest" = 0 → klar). Komponent-linjer
-      // der er skjult i par tælles ikke — deres reservation er allerede
-      // overtaget af salgsvaren.
+      // Brief 75 tillæg C · rev. tillæg G · brief 78 tillæg A §1:
+      // totaler måles på reservation (VISMAs "I rest" = 0 → klar).
+      // Reservationer (levering=5) holdes uden for iAlt/klar/afventer
+      // og får deres egen bucket. En Primeur der stadig venter tælles
+      // også separat. Komponent-linjer skjult i par tælles ikke.
       let klarRaw = 0;
       let afventerRaw = 0;
       let enPrimeurRaw = 0;
+      let paaReservationRaw = 0;
       for (const [ordre_nr, lines] of byOrdre) {
         const skjul = skjulByOrdre.get(ordre_nr) ?? new Set<string>();
         const overtagRes = overtagByOrdre.get(ordre_nr) ?? new Map();
@@ -396,9 +445,11 @@ export function useOpenOrders(vismaCustomerNo: string | null | undefined) {
             overtag !== undefined
               ? overtag
               : Number(r.reserveret_mod_lager ?? 0);
+          const erReservation = r.levering === "5";
           const isEnPrimeur = r.status === "21";
           const isKlar = reserveret >= antal;
-          if (isEnPrimeur && !isKlar) enPrimeurRaw += belob;
+          if (erReservation) paaReservationRaw += belob;
+          else if (isEnPrimeur && !isKlar) enPrimeurRaw += belob;
           else if (isKlar) klarRaw += belob;
           else afventerRaw += belob;
         }
@@ -407,10 +458,11 @@ export function useOpenOrders(vismaCustomerNo: string | null | undefined) {
       const iAlt = Math.round(klarRaw + afventerRaw);
       const afventer = iAlt - klar;
       const enPrimeur = Math.round(enPrimeurRaw);
+      const paaReservation = Math.round(paaReservationRaw);
 
       return {
         orders: out,
-        totals: { klar, afventer, enPrimeur, iAlt },
+        totals: { klar, afventer, enPrimeur, paaReservation, iAlt },
       };
     },
   });
