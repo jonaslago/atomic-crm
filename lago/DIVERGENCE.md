@@ -65,16 +65,23 @@ værdi. Klassen i markup er ikke bevis for at reglen er anvendt.
 Tjek både at reglen produceres OG at den vinder specificitets-kampen
 (en anden klasse kan overskrive).
 
-## PostgREST server-side row-limit (22. sep 2026)
+## PostgREST-afkortning er tavs — sum-tjek altid (22. sep 2026)
 
-PostgREST har et server-side max-rows loft (default 1000). En
-forespørgsel med `?limit=2000` eller `.limit(5000)` returnerer op til
-1000 rækker **tavst** — ingen fejl, ingen advarsel. Content-Range-headeren
-siger `0-999/1403`, men body er stille truncated.
+PostgREST truncates row-svar uden fejl. Der er (mindst) to kilder:
 
-Samme tavshed på supabase-js: `supabase.from(...).select(..., { count: 'exact' }).range(0, 4999)` overtrumfer ikke serverens loft.
+1. **Server-side max-rows loft (default 1000).** `?limit=2000` eller
+   `.limit(5000)` giver op til 1000 rækker; Content-Range siger
+   `0-999/1403`, men body er stille kortet.
+2. **Range-header sat af klienten.** `Range: 0-1999` returnerer op til
+   2000 rækker — men hvis dataset er større, får du ingen fejl, bare
+   en delmængde. Content-Range afslører det (`0-1999/3421`) hvis man
+   læser den.
 
-**Fanget to gange:**
+Samme tavshed på supabase-js: `.select(..., { count: 'exact' }).range(0, 4999)`
+overtrumfer ikke serverens loft, og `.range(0, 999)` afkorter uden
+advarsel hvis dataset > 1000.
+
+**Fanget tre gange på to dage:**
 
 - **17. sep 2026** — kundelisten på 1.164 rækker med "Vis inaktive"
   slået til blev afkortet uden `range()`-paging. Symptom: liste-widget
@@ -83,16 +90,51 @@ Samme tavshed på supabase-js: `supabase.from(...).select(..., { count: 'exact' 
   med 1.403 rækker blev grupperet på 995 + 5 = 1.000. De 403 rækker
   "manglede" og lignede en tredje source-værdi (NULL-bucket). Fandtes
   ikke — samme `visma_import`-bucket, bare uden for limit.
+- **22. sep 2026 (brief 75 tillæg E)** — probe af `open_orders_lago`
+  med `Range: 0-1999` gav Tønden 3 åbne ordrer. Reelt: 12. Content-Range
+  blev ikke læst. En sum-tjek-huskeregel var skrevet dagen før og
+  holdt ikke — fordi den kun eksisterede i memory, og fordi den
+  afhang af at man huskede at gøre det.
 
-**Regel:** når en forespørgsel kan returnere > 1000 rækker, brug
-Range-paging (`Range: 0-999`, `1000-1999`, ...) og sum-tjek klient-side
-mod `count(*)` (fra Content-Range-headeren) FØR du aggregerer eller
-rapporterer tal. Uenighed mellem total og sum af hentede rækker er
-ALTID limit der lyver — aldrig data der er "spredt et sted ekstra".
+**Reglen skal være strukturel, ikke en huskeregel.** Enhver
+prod-DB-probe SKAL sende `Prefer: count=exact`, læse Content-Range,
+og fejle højt hvis `body.length + start_offset ≠ total`. Uenighed er
+ALTID limit der lyver — aldrig data spredt et sted ekstra.
 
-I supabase-js: brug `range(from, to)` i løkker af 1000, ikke én
-kald med `.limit(N)`. Uden Range-paging vil resultatet være
-`count > body.length` med `body.length` altid ≤ 1000.
+Copy-paste helper (browser probe med captured session; kør inde i
+`fetch`-sniff-mønsteret):
+
+```js
+async function fetchAllOrDie(url, auth, pageSize = 1000) {
+  const rows = [];
+  let start = 0, total = null;
+  while (true) {
+    const end = start + pageSize - 1;
+    const r = await fetch(url, {
+      headers: { ...auth, 'Prefer': 'count=exact',
+                 'Range-Unit': 'items', 'Range': `${start}-${end}` },
+    });
+    const cr = r.headers.get('content-range'); // "0-999/1403"
+    if (!cr) throw new Error('no content-range — server did not honor count');
+    total = parseInt(cr.split('/')[1], 10);
+    const chunk = await r.json();
+    rows.push(...chunk);
+    if (rows.length >= total) break;
+    if (chunk.length === 0) {
+      throw new Error(`stalled at ${rows.length}/${total} — server truncated silently`);
+    }
+    start = rows.length;
+  }
+  if (rows.length !== total) {
+    throw new Error(`sum-tjek: got ${rows.length}, expected ${total}`);
+  }
+  return { rows, total };
+}
+```
+
+I applikationskode (supabase-js): brug `range(from, to)` i løkker af
+1000 med samme sum-tjek. `count > body.length` er en afkortning,
+uanset kilden.
 
 ## Current divergences
 
