@@ -136,7 +136,39 @@ I applikationskode (supabase-js): brug `range(from, to)` i løkker af
 1000 med samme sum-tjek. `count > body.length` er en afkortning,
 uanset kilden.
 
-## Teknisk gæld: `v_open_orders_categorised` har forældede status-koder (22. sep 2026)
+## Teknisk gæld: `open_orders_lago.lagerstatus` er ikke længere sandheden (22. sep 2026)
+
+To divergenser mellem tabellen og det, sælgeren ser på skærmen. Begge
+sikre i dag fordi ingen widget, rapport eller RPC læser tabellen
+direkte — MEN en fremtidig consumer (Oles dashboard, en Excel-eksport,
+en admin-rapport) arver fejlen uden at vide det.
+
+### 1. Par-håndtering sker i visnings-laget, ikke i data
+
+Brief 78 §1 fjernede `Undtages lagerhåndtering=1`-filteret fra
+importen. Salgsvare-linjer (fx AEvin #34696·1 "91801-Jul" 3.163,80 kr.,
+`reserveret=0`) og deres komponent-linjer (fx #34696·2 "91801" 0 kr.,
+`reserveret=8`) landede begge i basen. Par-detektionen sker nu i
+`useOpenOrders.ts` (React-lag): salgsvaren overtager komponentens
+reservation i visning.
+
+**Konsekvens:** 29 par i basen. Salgsvaren har `lagerstatus='restordre'`
+i tabellen (fordi den ikke selv bærer reservation), men vises som klar/
+delvis på skærmen (via komponentens 8 reserveret). Tabellen har 727
+restordre-linjer; skærmen viser 669 reelle restordre-tilfælde.
+
+**Risiko:** enhver `SELECT ... WHERE lagerstatus='restordre'` mod
+tabellen giver 58 falsk-positive — 29 kunder ville stå som "i restordre"
+på varer der reelt står reserveret på hylden.
+
+**Fix, når det bliver aktuelt:** enten flyt par-detektionen ned i basen
+(en trigger der ved import overfører komponentens `reserveret_mod_lager`
+til salgsvaren og skjuler komponenten), eller byg et view
+`v_open_orders_visning` der gør samme aggregering som `useOpenOrders`
+og lad alle consumers læse fra det. Aldrig `lagerstatus` direkte fra
+`open_orders_lago` uden at vide det her.
+
+### 2. `v_open_orders_categorised` har forældede status-koder
 
 Viewet `public.v_open_orders_categorised` blev bygget i brief 25 tillæg B
 (migration `20260915220000_lago_25_tillaeg_B_kategorier.sql`) og bruger:
@@ -153,12 +185,11 @@ i `aabneOrdrer.ts` er rettet; viewet er det ikke.
 parser-kommentar), så vi lader det stå — migrationer kan ikke rettes
 bagud uden en ny migration der drop+create'r viewet.
 
-**Gæld:** næste gang viewet får en formel bruger (fx en admin-rapport
-eller en dashboard-widget), skal en ny migration udrulles der genskaber
-viewet med `('11','12','13','14')` i begge WHERE-klausuler (linje 91 og
-104 i `20260915220000_lago_25_tillaeg_B_kategorier.sql`). Uden det arver
-den nye consumer samme fejl — og den fejltype er præcis hvad brief 78
-tillæg C fangede: en autoritativ kilde der var forkert.
+**Fix, når viewet får en formel bruger:** ny migration der genskaber
+det med `('11','12','13','14')` i begge WHERE-klausuler (linje 91 og
+104 i `20260915220000_lago_25_tillaeg_B_kategorier.sql`), og som
+samtidig håndterer par-problemet fra §1 ovenover — begge fejl ligger i
+samme lag.
 
 ## Current divergences
 
