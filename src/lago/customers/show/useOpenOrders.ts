@@ -35,6 +35,16 @@ export interface OpenOrderLine {
   ej_faktureret: number;
   /** "klar" | "delvis" | "restordre" — hvad kunden får (linje-niveau). */
   lagerstatus: "klar" | "delvis" | "restordre";
+  /**
+   * Brief 75 tillæg D-opfølgning (22. sep 2026): når `ej_faktureret === 0`
+   * er beløbet ikke informationen — LAGO's prisstruktur gør nul lovligt.
+   * Label mapper VISMA's salgstype + kampagne til et ord sælgeren kan
+   * sige højt til kunden. Se komputer i useOpenOrders for reglerne.
+   *
+   * `null` = vis beløbet normalt (også hvis det er 0 kr uden forklaring —
+   * dét er den ærlige "vi ved ikke"-tilstand).
+   */
+  belobLabel: string | null;
 }
 
 export interface OpenOrderSummary {
@@ -86,8 +96,35 @@ interface RawRow {
   ej_faktureret: number | null;
   lagerstatus: string | null;
   status: string | null;
+  salgstype: string | null;
+  kampagne: string | null;
   produktnr: string | null;
   oensket_leveringsdato: string | null;
+}
+
+/**
+ * Brief 75 tillæg D-opfølgning (22. sep 2026): forklaring på hvorfor
+ * en linje har ej_faktureret = 0 kr. LAGO's prisstruktur gør nul
+ * lovligt: PRØVE er en smagsprøve, PROMO er en kampagnevare, FRIFL er
+ * "frie flasker" (uden beregning), kampagne dækker ikke-klassificerede
+ * kampagner. FRIFLM ("nettopris") er derimod en betalt linje — en
+ * FRIFLM-linje på 0 kr er en anomali og skal se sådan ud, så vi ikke
+ * beroliger sælgeren med et forkert ord.
+ *
+ * Returnerer null når beløbet skal vises normalt (også hvis det er
+ * 0 kr uden forklaring — dét er den ærlige tilstand).
+ */
+function beloebLabel(
+  ejFaktureret: number,
+  salgstype: string | null,
+  kampagne: string | null,
+): string | null {
+  if (ejFaktureret !== 0) return null;
+  if (salgstype === "PRØVE") return "prøve";
+  if (salgstype === "PROMO") return "promo";
+  if (salgstype === "FRIFL") return "frie flasker";
+  if (kampagne && kampagne !== "") return "kampagne";
+  return null;
 }
 
 export function useOpenOrders(vismaCustomerNo: string | null | undefined) {
@@ -100,7 +137,7 @@ export function useOpenOrders(vismaCustomerNo: string | null | undefined) {
       const { data, error } = await supabase
         .from("open_orders_lago")
         .select(
-          "ordre_nr, ordre_dato, linje_nr, antal, ej_faktureret, lagerstatus, status, produktnr, oensket_leveringsdato",
+          "ordre_nr, ordre_dato, linje_nr, antal, ej_faktureret, lagerstatus, status, salgstype, kampagne, produktnr, oensket_leveringsdato",
         )
         .eq("visma_customer_no", vismaCustomerNo as string)
         .order("ordre_dato", { ascending: false });
@@ -171,13 +208,15 @@ export function useOpenOrders(vismaCustomerNo: string | null | undefined) {
               (l.produktnr && navnByProduktnr.get(l.produktnr)) ||
               l.produktnr ||
               "(uden produktnr)";
+            const ejFakt = Number(l.ej_faktureret ?? 0);
             return {
               linje_nr: l.linje_nr,
               produktnr: l.produktnr,
               produktnavn,
               antal: Number(l.antal ?? 0),
-              ej_faktureret: Number(l.ej_faktureret ?? 0),
+              ej_faktureret: ejFakt,
               lagerstatus: normalized,
+              belobLabel: beloebLabel(ejFakt, l.salgstype, l.kampagne),
             };
           })
           .sort((a, b) => {

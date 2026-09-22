@@ -893,15 +893,24 @@ function OrderLines({ lines }: { lines: OpenOrderLine[] }) {
       {visibleLines.map((l) => (
         <li
           key={l.linje_nr}
-          className="flex items-baseline justify-between gap-3"
+          className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-baseline gap-x-3"
         >
-          <span className="min-w-0 flex-1 truncate text-[var(--fg-2)]">
+          <span className="min-w-0 truncate text-[var(--fg-2)]">
             {l.antal ? (
               <span className="tabular-nums text-[var(--fg-3)]">
                 {l.antal} stk.{" "}
               </span>
             ) : null}
             {l.produktnavn}
+          </span>
+          {/* Brief 75 tillæg D-opfølgning (22. sep 2026): beløb pr. linje.
+              Er beløbet 0 og har LAGO's prisstruktur en forklaring
+              (prøve / promo / frie flasker / kampagne), står ordet i
+              stedet — så nul ikke ligner en fejl. Er beløbet 0 uden
+              forklaring (FRIFLM/tom uden kampagne), står "0 kr." —
+              det er den ærlige tilstand, ikke en beroligelse. */}
+          <span className="shrink-0 tabular-nums text-[var(--fg-2)]">
+            {l.belobLabel ?? kroner.format(l.ej_faktureret)}
           </span>
           <span className="shrink-0 text-[length:var(--t-meta)] text-[var(--fg-3)]">
             {l.lagerstatus === "klar"
