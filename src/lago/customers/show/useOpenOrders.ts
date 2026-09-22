@@ -37,11 +37,35 @@ export interface OpenOrderSummary {
   oensketLevering: string | null;
 }
 
+/**
+ * Brief 75 tillæg C (22. sep 2026): linje-baserede totaler, opdelt så
+ * sælgeren ikke skal lægge sammen i hovedet foran en kunde.
+ *
+ * - klar:      lagerstatus=klar (inkl. ankommet En Primeur, jf. tillæg B)
+ * - afventer:  lagerstatus in {restordre, delvis}, UNDTAGET En Primeur
+ *              der stadig venter (aftalte 1-2 år, ikke akut)
+ * - enPrimeur: status=21 OG lagerstatus != klar — separat linje, holdes
+ *              uden for "i alt" så tallet ikke bliver misvisende
+ * - iAlt:      klar + afventer (bevidst UDEN enPrimeur)
+ */
+export interface OpenOrdersTotals {
+  klar: number;
+  afventer: number;
+  enPrimeur: number;
+  iAlt: number;
+}
+
+export interface OpenOrdersData {
+  orders: OpenOrderSummary[];
+  totals: OpenOrdersTotals;
+}
+
 interface RawRow {
   ordre_nr: string;
   ordre_dato: string;
   ej_faktureret: number | null;
   lagerstatus: string | null;
+  status: string | null;
   produktnr: string | null;
   oensket_leveringsdato: string | null;
 }
@@ -68,12 +92,12 @@ export function useOpenOrders(vismaCustomerNo: string | null | undefined) {
     queryKey: ["lago-open-orders", vismaCustomerNo],
     enabled: Boolean(vismaCustomerNo),
     staleTime: 60_000,
-    queryFn: async (): Promise<OpenOrderSummary[]> => {
+    queryFn: async (): Promise<OpenOrdersData> => {
       const supabase = getSupabaseClient();
       const { data, error } = await supabase
         .from("open_orders_lago")
         .select(
-          "ordre_nr, ordre_dato, ej_faktureret, lagerstatus, produktnr, oensket_leveringsdato",
+          "ordre_nr, ordre_dato, ej_faktureret, lagerstatus, status, produktnr, oensket_leveringsdato",
         )
         .eq("visma_customer_no", vismaCustomerNo as string)
         .order("ordre_dato", { ascending: false });
@@ -160,7 +184,31 @@ export function useOpenOrders(vismaCustomerNo: string | null | undefined) {
         });
       }
       out.sort((a, b) => (a.ordre_dato < b.ordre_dato ? 1 : -1));
-      return out;
+
+      // Brief 75 tillæg C: linje-baserede totaler. En Primeur der
+      // stadig venter holdes uden for iAlt; ankommet En Primeur
+      // (status=21 + lagerstatus=klar) tælles som klar — dét er
+      // aftalen fra tillæg B: den er landet, sig det højt.
+      let klar = 0;
+      let afventer = 0;
+      let enPrimeur = 0;
+      for (const r of rows) {
+        const belob = Number(r.ej_faktureret ?? 0);
+        const isEnPrimeur = r.status === "21";
+        const isKlar = r.lagerstatus === "klar";
+        if (isEnPrimeur && !isKlar) {
+          enPrimeur += belob;
+        } else if (isKlar) {
+          klar += belob;
+        } else {
+          afventer += belob;
+        }
+      }
+
+      return {
+        orders: out,
+        totals: { klar, afventer, enPrimeur, iAlt: klar + afventer },
+      };
     },
   });
 }
