@@ -49,7 +49,16 @@ const REQUIRED_COLUMN_ALIASES: [string, ...string[]][] = [
 // Ordregruppering 5 dækker BEGGE i VISMA — så et salgsordre-udtræk med
 // disse koder er tilgang, ikke omsætning, og linjen skal afvises med
 // tydelig fejl i tørløbet.
-const INDKOEBS_STATUS_KODER = new Set(["11", "12", "19", "20"]);
+//
+// Brief 78 tillæg C (22. sep 2026): koderne var 11/12/19/20 fra brief 25
+// tillæg B, men projektgrundlag/VISMA_datamodel_og_ordretyper.md §3c var
+// forkert på seks koder. Jonas læste listen op fra VISMA-dialogen 22. sep;
+// masterfilen er rettet samme dag. Modtage-koderne er 11/12/13/14 —
+// koderne 19 og 20 findes ikke i VISMA. `13` (Modtaget) og `14`
+// (Modtagelsen bekræftet) slap tidligere igennem som kundeordrelinjer.
+// Ingen af de fire optræder i 22-sep-udtrækket, så der er ingen kendt
+// skade — men reglen var forkert.
+const INDKOEBS_STATUS_KODER = new Set(["11", "12", "13", "14"]);
 
 interface DistrictLookup {
   get(kundeNo: string): string | null | undefined;

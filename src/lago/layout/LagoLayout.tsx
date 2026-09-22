@@ -3,8 +3,8 @@ import { ErrorBoundary } from "react-error-boundary";
 import { matchPath, Navigate, useLocation } from "react-router";
 
 import { Notification } from "@/components/admin/notification";
-import { Error } from "@/components/admin/error";
 import { Skeleton } from "@/components/ui/skeleton";
+import { LagoErrorFallback } from "./LagoErrorFallback";
 
 import { useConfigurationLoader } from "@/components/atomic-crm/root/useConfigurationLoader";
 
@@ -61,7 +61,7 @@ export function LagoLayout({ children }: { children: ReactNode }) {
         className="mx-auto max-w-screen-2xl px-2 min-[480px]:px-4 pt-4 pb-[calc(env(safe-area-inset-bottom)+1.5rem)]"
         id="main-content"
       >
-        <ErrorBoundary FallbackComponent={Error}>
+        <ErrorBoundary FallbackComponent={LagoErrorFallback}>
           <Suspense fallback={<Skeleton className="h-12 w-12 rounded-full" />}>
             {isKort ? (
               <KortPage />
