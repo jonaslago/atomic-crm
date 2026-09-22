@@ -26,15 +26,33 @@ import { getSupabaseClient } from "@/components/atomic-crm/providers/supabase/su
  * Brief 48 §B: restNote nævner PRODUKTNAVN i stedet for linjetal.
  */
 
+export interface OpenOrderLine {
+  linje_nr: string;
+  produktnr: string | null;
+  /** Produkt-beskrivelse fra products_lago (fallback: produktnr). */
+  produktnavn: string;
+  antal: number;
+  ej_faktureret: number;
+  /** "klar" | "delvis" | "restordre" — hvad kunden får (linje-niveau). */
+  lagerstatus: "klar" | "delvis" | "restordre";
+}
+
 export interface OpenOrderSummary {
   ordre_nr: string;
   ordre_dato: string;
   total: number;
   status: "klar" | "restordre";
-  restNote: string | null;
+  /** Brief 75 tillæg D (22. sep 2026): antal linjer der afventer i
+   *  denne ordre (restordre + delvis). Bruges i stedet for restNote
+   *  når hele ordren skal foldes ud — sælgeren skal kunne se HVAD
+   *  der afventer, ikke bare et navn og "+ N andre". */
+  restLineCount: number;
   /** Brief 51 §4 (17. sep 2026): tidligste ønskede leveringsdato på
    *  linjerne i ordren. Null når ingen linje har feltet udfyldt. */
   oensketLevering: string | null;
+  /** Brief 75 tillæg D §4: alle linjer i ordren, så UI kan folde ud
+   *  uden en ekstra fetch. */
+  lines: OpenOrderLine[];
 }
 
 /**
@@ -63,28 +81,13 @@ export interface OpenOrdersData {
 interface RawRow {
   ordre_nr: string;
   ordre_dato: string;
+  linje_nr: string;
+  antal: number | null;
   ej_faktureret: number | null;
   lagerstatus: string | null;
   status: string | null;
   produktnr: string | null;
   oensket_leveringsdato: string | null;
-}
-
-/** Kort produktnavn — appellation eller første 2-3 markante ord. Hvis
- *  navnet er meget langt tages det op til første komma / slash / dash
- *  så vi ikke får hele produkt-etiketten i noten. */
-function shortenProductName(
-  name: string | null | undefined,
-  fallback: string,
-): string {
-  if (!name) return fallback;
-  const trimmed = name.trim();
-  if (!trimmed) return fallback;
-  // Klip ved første "· , / -" der har mellemrum foran — så vi tager
-  // "Meursault" ud af "Meursault 1er cru · Perrières · 2020".
-  const cut = trimmed.search(/\s[·,/-]/);
-  const head = cut > 0 ? trimmed.slice(0, cut) : trimmed;
-  return head.length > 40 ? head.slice(0, 40) + "…" : head;
 }
 
 export function useOpenOrders(vismaCustomerNo: string | null | undefined) {
@@ -97,7 +100,7 @@ export function useOpenOrders(vismaCustomerNo: string | null | undefined) {
       const { data, error } = await supabase
         .from("open_orders_lago")
         .select(
-          "ordre_nr, ordre_dato, ej_faktureret, lagerstatus, status, produktnr, oensket_leveringsdato",
+          "ordre_nr, ordre_dato, linje_nr, antal, ej_faktureret, lagerstatus, status, produktnr, oensket_leveringsdato",
         )
         .eq("visma_customer_no", vismaCustomerNo as string)
         .order("ordre_dato", { ascending: false });
@@ -109,18 +112,18 @@ export function useOpenOrders(vismaCustomerNo: string | null | undefined) {
       // stadig, så det tælles med.
       const isRestLine = (r: RawRow) =>
         r.lagerstatus === "restordre" || r.lagerstatus === "delvis";
-      const restProduktnr = new Set<string>();
+      // Brief 75 tillæg D §4: fetche produktnavn for ALLE linjer (ikke
+      // kun rest), så folde-ud viser hvad hver linje er.
+      const allProduktnr = new Set<string>();
       for (const r of rows) {
-        if (isRestLine(r) && r.produktnr) {
-          restProduktnr.add(r.produktnr);
-        }
+        if (r.produktnr) allProduktnr.add(r.produktnr);
       }
       const navnByProduktnr = new Map<string, string>();
-      if (restProduktnr.size > 0) {
+      if (allProduktnr.size > 0) {
         const { data: pData, error: pError } = await supabase
           .from("products_lago")
           .select("produktnr, beskrivelse")
-          .in("produktnr", [...restProduktnr]);
+          .in("produktnr", [...allProduktnr]);
         if (pError) throw pError;
         for (const p of (pData ?? []) as Array<{
           produktnr: string;
@@ -143,28 +146,7 @@ export function useOpenOrders(vismaCustomerNo: string | null | undefined) {
           (s, l) => s + Number(l.ej_faktureret ?? 0),
           0,
         );
-        // Restlinjer sorteret efter beløb faldende — det største produkt
-        // er hovedvaren i "Meursault + 2 andre".
-        const restLines = lines
-          .filter(isRestLine)
-          .sort(
-            (a, b) =>
-              Number(b.ej_faktureret ?? 0) - Number(a.ej_faktureret ?? 0),
-          );
-        let restNote: string | null = null;
-        if (restLines.length > 0) {
-          const primary = restLines[0];
-          const primaryName = shortenProductName(
-            primary.produktnr ? navnByProduktnr.get(primary.produktnr) : null,
-            primary.produktnr ?? "produkt",
-          );
-          if (restLines.length === 1) {
-            restNote = `${primaryName} afventer ankomst`;
-          } else {
-            const others = restLines.length - 1;
-            restNote = `${primaryName} + ${others} ${others === 1 ? "anden" : "andre"} afventer ankomst`;
-          }
-        }
+        const restLines = lines.filter(isRestLine);
         // Brief 51 §4: tidligste ønskede leveringsdato på tværs af
         // linjerne. Feltet ligger på ordre-hovedet i VISMA og skulle
         // være ens på alle linjer, men vi tager tidligste for at være
@@ -174,13 +156,45 @@ export function useOpenOrders(vismaCustomerNo: string | null | undefined) {
           .filter((d): d is string => Boolean(d))
           .sort();
         const oensketLevering = leveringsdatoer[0] ?? null;
+        // Brief 75 tillæg D §4: linjer med produkt-navn + normaliseret
+        // lagerstatus. Sorter først på lagerstatus (rest/delvis øverst)
+        // så folde-ud viser det interessante først, dernæst på beløb
+        // faldende — det største produkt trækker øjet.
+        const orderLines: OpenOrderLine[] = lines
+          .map((l) => {
+            const rawStatus = l.lagerstatus;
+            const normalized: OpenOrderLine["lagerstatus"] =
+              rawStatus === "klar" || rawStatus === "delvis"
+                ? rawStatus
+                : "restordre";
+            const produktnavn =
+              (l.produktnr && navnByProduktnr.get(l.produktnr)) ||
+              l.produktnr ||
+              "(uden produktnr)";
+            return {
+              linje_nr: l.linje_nr,
+              produktnr: l.produktnr,
+              produktnavn,
+              antal: Number(l.antal ?? 0),
+              ej_faktureret: Number(l.ej_faktureret ?? 0),
+              lagerstatus: normalized,
+            };
+          })
+          .sort((a, b) => {
+            const rank = (s: string) =>
+              s === "restordre" ? 0 : s === "delvis" ? 1 : 2;
+            const dr = rank(a.lagerstatus) - rank(b.lagerstatus);
+            if (dr !== 0) return dr;
+            return b.ej_faktureret - a.ej_faktureret;
+          });
         out.push({
           ordre_nr,
           ordre_dato: lines[0].ordre_dato,
           total,
           status: restLines.length > 0 ? "restordre" : "klar",
-          restNote,
+          restLineCount: restLines.length,
           oensketLevering,
+          lines: orderLines,
         });
       }
       out.sort((a, b) => (a.ordre_dato < b.ordre_dato ? 1 : -1));
@@ -189,25 +203,35 @@ export function useOpenOrders(vismaCustomerNo: string | null | undefined) {
       // stadig venter holdes uden for iAlt; ankommet En Primeur
       // (status=21 + lagerstatus=klar) tælles som klar — dét er
       // aftalen fra tillæg B: den er landet, sig det højt.
-      let klar = 0;
-      let afventer = 0;
-      let enPrimeur = 0;
+      let klarRaw = 0;
+      let afventerRaw = 0;
+      let enPrimeurRaw = 0;
       for (const r of rows) {
         const belob = Number(r.ej_faktureret ?? 0);
         const isEnPrimeur = r.status === "21";
         const isKlar = r.lagerstatus === "klar";
         if (isEnPrimeur && !isKlar) {
-          enPrimeur += belob;
+          enPrimeurRaw += belob;
         } else if (isKlar) {
-          klar += belob;
+          klarRaw += belob;
         } else {
-          afventer += belob;
+          afventerRaw += belob;
         }
       }
+      // Brief 75 tillæg C, opfølgning (22. sep 2026): afventer skal
+      // beregnes som iAlt − klar, ikke summeres uafhængigt. Ellers
+      // runder Intl.NumberFormat de tre tal hver for sig og de går
+      // ikke op på skærmen (699.877 mod 302.791 + 397.085 = 699.876).
+      // Runder først iAlt og klar, så afventer er restforskellen —
+      // 302.791 + 397.086 = 699.877 hver gang.
+      const klar = Math.round(klarRaw);
+      const iAlt = Math.round(klarRaw + afventerRaw);
+      const afventer = iAlt - klar;
+      const enPrimeur = Math.round(enPrimeurRaw);
 
       return {
         orders: out,
-        totals: { klar, afventer, enPrimeur, iAlt: klar + afventer },
+        totals: { klar, afventer, enPrimeur, iAlt },
       };
     },
   });

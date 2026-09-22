@@ -36,6 +36,7 @@ import { useCurrentLagoRole } from "@/lago/auth/useCurrentLagoRole";
 import { ProposeChangeButton } from "./ProposeChangeDialog";
 import {
   useOpenOrders,
+  type OpenOrderLine,
   type OpenOrderSummary,
   type OpenOrdersTotals,
 } from "./useOpenOrders";
@@ -736,6 +737,19 @@ export function AabneOrdrerSection({
     enPrimeur: 0,
     iAlt: 0,
   };
+  // Brief 75 tillæg D §4 (22. sep 2026): folde-ud pr. ordre. Kun de
+  // ordrer der har rest-linjer starter åbne — resten kan foldes op af
+  // sælgeren når hun har brug for det. Toggle-state ligger her i
+  // parent så vi kan resette hvis kunden skifter.
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const toggleExpanded = (ordreNr: string) => {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(ordreNr)) next.delete(ordreNr);
+      else next.add(ordreNr);
+      return next;
+    });
+  };
   return (
     <Section variant={isLaptop ? "panel" : "divider"}>
       {isLaptop ? (
@@ -768,58 +782,148 @@ export function AabneOrdrerSection({
         <>
           <RowGroup>
             {orders.slice(0, 5).map((o) => (
-              <li key={o.ordre_nr} className="flex flex-col gap-1.5">
-                <div className="flex items-center justify-between gap-3">
-                  <div className="flex items-baseline gap-2 min-w-0">
-                    <span className="text-sm font-medium text-[var(--fg)]">
-                      Ordre #{o.ordre_nr}
-                    </span>
-                    <span className="text-[length:var(--t-meta)] text-[var(--fg-3)]">
-                      · {dateShort(o.ordre_dato)}
-                    </span>
-                  </div>
-                  <span className="text-sm font-medium text-[var(--fg)] tabular-nums">
-                    {kroner.format(o.total)}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between gap-3">
-                  <span className="text-[length:var(--t-sec)] text-[var(--fg-2)]">
-                    Lagerstatus
-                  </span>
-                  {o.status === "klar" ? (
-                    <StatusBadge variant="groen">Klar til levering</StatusBadge>
-                  ) : (
-                    <StatusBadge variant="gul">Restordre</StatusBadge>
-                  )}
-                </div>
-                {o.restNote && (
-                  <p className="text-[length:var(--t-sec)] text-[var(--fg-2)]">
-                    {o.restNote}
-                  </p>
-                )}
-                {/* Brief 51 §4 (17. sep 2026): ønsket leveringsdato vises
-                    KUN når feltet har en værdi. Ugedag med — sælger
-                    planlægger i ugedage. Er datoen passeret og ordren
-                    stadig åben, står den i --st-red-fg. */}
-                {o.oensketLevering && (
-                  <p
-                    className={cn(
-                      "text-[length:var(--t-sec)]",
-                      isPastDate(o.oensketLevering)
-                        ? "text-[var(--st-red-fg)] font-medium"
-                        : "text-[var(--fg-2)]",
-                    )}
-                  >
-                    Ønsket levering: {formatWeekdayDate(o.oensketLevering)}
-                  </p>
-                )}
-              </li>
+              <OrderRow
+                key={o.ordre_nr}
+                order={o}
+                open={expanded.has(o.ordre_nr)}
+                onToggle={() => toggleExpanded(o.ordre_nr)}
+              />
             ))}
           </RowGroup>
           <OrderTotals totals={totals} />
         </>
       )}
     </Section>
+  );
+}
+
+/**
+ * Brief 75 tillæg D §2+§4 (22. sep 2026) · én ordre-række med folde-ud.
+ *
+ * Etiketten "Lagerstatus" er væk — chippen står alene, ellers er det
+ * en etiket på en etiket. Restnoten "Vista Alegre + 2 andre" er væk
+ * fordi den refererede til noget sælgeren ikke kunne komme til;
+ * i stedet står "N linjer afventer" og hele ordren kan foldes ud.
+ */
+function OrderRow({
+  order: o,
+  open,
+  onToggle,
+}: {
+  order: OpenOrderSummary;
+  open: boolean;
+  onToggle: () => void;
+}) {
+  const hasLines = o.lines.length > 0;
+  const chevron = open ? "▾" : "▸";
+  const restLabel =
+    o.restLineCount > 0
+      ? `${o.restLineCount} ${o.restLineCount === 1 ? "linje" : "linjer"} afventer`
+      : null;
+  return (
+    <li className="flex flex-col gap-1.5">
+      <button
+        type="button"
+        onClick={onToggle}
+        disabled={!hasLines}
+        className="flex w-full items-center justify-between gap-3 text-left"
+      >
+        <div className="flex min-w-0 items-baseline gap-2">
+          {hasLines && (
+            <span
+              aria-hidden
+              className="w-3 shrink-0 text-[var(--fg-3)] tabular-nums"
+            >
+              {chevron}
+            </span>
+          )}
+          <span className="text-sm font-medium text-[var(--fg)]">
+            Ordre #{o.ordre_nr}
+          </span>
+          <span className="text-[length:var(--t-meta)] text-[var(--fg-3)]">
+            · {dateShort(o.ordre_dato)}
+          </span>
+          {restLabel && (
+            <span className="text-[length:var(--t-meta)] text-[var(--fg-3)]">
+              · {restLabel}
+            </span>
+          )}
+        </div>
+        <div className="flex items-center gap-3">
+          <span className="text-sm font-medium text-[var(--fg)] tabular-nums">
+            {kroner.format(o.total)}
+          </span>
+          {o.status === "klar" ? (
+            <StatusBadge variant="groen">Klar til levering</StatusBadge>
+          ) : (
+            <StatusBadge variant="gul">Restordre</StatusBadge>
+          )}
+        </div>
+      </button>
+      {o.oensketLevering && (
+        <p
+          className={cn(
+            "text-[length:var(--t-sec)]",
+            isPastDate(o.oensketLevering)
+              ? "text-[var(--st-red-fg)] font-medium"
+              : "text-[var(--fg-2)]",
+          )}
+        >
+          Ønsket levering: {formatWeekdayDate(o.oensketLevering)}
+        </p>
+      )}
+      {open && hasLines && <OrderLines lines={o.lines} />}
+    </li>
+  );
+}
+
+/**
+ * Brief 75 tillæg D §4: linje-detaljer i en foldet-ud ordre.
+ * Grænsen fra tillæg A §4: højst 10 linjer, så "Vis alle N →".
+ * Median er 9, så de fleste ordrer folder helt ud.
+ */
+const ORDER_LINE_LIMIT = 10;
+
+function OrderLines({ lines }: { lines: OpenOrderLine[] }) {
+  const [showAll, setShowAll] = useState(false);
+  const visibleLines = showAll ? lines : lines.slice(0, ORDER_LINE_LIMIT);
+  const hidden = lines.length - visibleLines.length;
+  return (
+    <ul className="mt-1 flex flex-col gap-1 rounded-md bg-[var(--surface-1)] p-2 text-[length:var(--t-sec)]">
+      {visibleLines.map((l) => (
+        <li
+          key={l.linje_nr}
+          className="flex items-baseline justify-between gap-3"
+        >
+          <span className="min-w-0 flex-1 truncate text-[var(--fg-2)]">
+            {l.antal ? (
+              <span className="tabular-nums text-[var(--fg-3)]">
+                {l.antal} stk.{" "}
+              </span>
+            ) : null}
+            {l.produktnavn}
+          </span>
+          <span className="shrink-0 text-[length:var(--t-meta)] text-[var(--fg-3)]">
+            {l.lagerstatus === "klar"
+              ? "klar"
+              : l.lagerstatus === "delvis"
+                ? "delvis"
+                : "afventer ankomst"}
+          </span>
+        </li>
+      ))}
+      {hidden > 0 && (
+        <li>
+          <button
+            type="button"
+            onClick={() => setShowAll(true)}
+            className="text-[var(--fg-2)] font-medium underline-offset-2 hover:underline"
+          >
+            Vis alle {lines.length} →
+          </button>
+        </li>
+      )}
+    </ul>
   );
 }
 
