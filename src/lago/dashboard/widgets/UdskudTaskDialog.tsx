@@ -1,7 +1,6 @@
 import { CalendarClock } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useGetIdentity } from "ra-core";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -63,9 +62,15 @@ function useUdskydTask() {
       nyDato: string;
       begrundelse: string;
       gammelDato: string | null;
-      eventAf: string;
     }) => {
       const supabase = getSupabaseClient();
+      // Hent auth.uid() klientside — RLS-policy'en på task_events_lago
+      // kræver event_af = auth.uid() (uuid), ikke sales_id (bigint).
+      const { data: sessionData } = await supabase.auth.getSession();
+      const eventAf = sessionData.session?.user?.id;
+      if (!eventAf) {
+        throw new Error("Ingen aktiv session — log ud og ind igen.");
+      }
       const { error: updErr } = await supabase
         .from("tasks")
         .update({ due_date: input.nyDato })
@@ -74,7 +79,7 @@ function useUdskydTask() {
       const { error: evErr } = await supabase.from("task_events_lago").insert({
         task_id: input.taskId,
         event_type: "udskudt",
-        event_af: input.eventAf,
+        event_af: eventAf,
         note: input.begrundelse,
         udskudt_fra_dato: input.gammelDato,
         udskudt_til_dato: input.nyDato,
@@ -106,7 +111,6 @@ export function UdskudTaskDialog({
   currentDueDate,
   onDone,
 }: UdskudTaskDialogProps) {
-  const { data: identity } = useGetIdentity();
   const mutation = useUdskydTask();
   const [date, setDate] = useState<string>("");
   const [note, setNote] = useState<string>("");
@@ -138,11 +142,6 @@ export function UdskudTaskDialog({
       setError("Skriv en begrundelse — det er hele pointen.");
       return;
     }
-    const eventAf = typeof identity?.id === "string" ? identity.id : null;
-    if (!eventAf) {
-      setError("Kunne ikke finde din bruger — log ud og ind igen.");
-      return;
-    }
     const gammelDato = currentDueDate ? currentDueDate.substring(0, 10) : null;
     mutation.mutate(
       {
@@ -150,7 +149,6 @@ export function UdskudTaskDialog({
         nyDato: date,
         begrundelse: note.trim(),
         gammelDato,
-        eventAf,
       },
       {
         onSuccess: () => {
