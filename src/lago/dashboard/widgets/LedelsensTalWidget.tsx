@@ -215,7 +215,7 @@ export function LedelsensTalWidget() {
   return (
     <WidgetShell
       title="Sælgernes uge"
-      subtitle="Så jeg kan puffe jer kærligt i ryggen — ikke en rangering"
+      subtitle="Ugens aktivitet pr. sælger"
       isLoading={query.isPending}
       error={query.error as Error | null}
       isEmpty={rows.length === 0}
