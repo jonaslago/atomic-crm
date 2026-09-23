@@ -8,6 +8,14 @@ import { cn } from "@/lib/utils";
 import { ROLE_LAYOUTS } from "./roleLayouts";
 import { SectionNumberContext } from "./sectionNumberContext";
 import { WidgetShell } from "./WidgetShell";
+
+// Brief 81 bølge 2 (23. sep 2026) · build-marker der garanterer at
+// content-hash ændrer sig — Tailwind-classer var allerede scannet fra
+// tidligere build, så gap-y-6 og hidden @[768px]:block gav ikke ny
+// bundle-hash. Uden ny hash fyrer opdaterings-striben ikke, og Jonas
+// kan ikke vide om han ser bølge 2 eller det gamle bundle.
+const BUILD_MARKER_BRIEF_81_BOELGE_2 = "2026-09-23-kompakthed";
+void BUILD_MARKER_BRIEF_81_BOELGE_2;
 import { WIDGETS } from "./widgetRegistry";
 import type { WidgetWidth } from "./widgetTypes";
 
