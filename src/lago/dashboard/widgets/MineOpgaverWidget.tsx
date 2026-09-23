@@ -12,6 +12,7 @@ import { readErrorMessage } from "@/lago/ui/errorMessage";
 
 import { RowActionsMenu } from "../RowActionsMenu";
 import { WidgetShell } from "../WidgetShell";
+import { UdskudTaskDialog } from "./UdskudTaskDialog";
 
 /**
  * Hvad lovede jeg sidst (Domain-brief 34 §1 + tillæg A §1/§6
@@ -359,6 +360,7 @@ function TaskCard({
 }) {
   const { taskTypes } = useConfigurationContext();
   const [confirming, setConfirming] = useState(false);
+  const [udskudOpen, setUdskudOpen] = useState(false);
   const typeLabel = task.type
     ? (taskTypes.find((t) => t.value === task.type)?.label ?? task.type)
     : null;
@@ -430,13 +432,19 @@ function TaskCard({
           </Button>
         )}
         <RowActionsMenu
-          // Brief 36: Udskyd (FS-20) kobles i næste runde.
-          // Brief 76 §3 (22. sep 2026): Send videre til kontoret er nu
-          // her — den nulstiller sales_id og appender en note på
-          // tasks.text, så backoffice-puljen overtager og sælgeren
-          // stadig kan se den i "Sendt til kontoret"-sektionen nederst.
-          actions={
-            onHandoff
+          // Brief 76 tillæg A (23. sep 2026): Udskyd er koblet — åbner
+          // UdskudTaskDialog der flytter due_date + logger begrundelsen
+          // i task_events_lago (IKKE i tasks.text, som send-videre gør
+          // som kendt skrøbelighed).
+          // Brief 76 §3: Send videre til kontoret nulstiller sales_id
+          // og appender note på tasks.text; migreres til task_events_lago
+          // i en separat runde.
+          actions={[
+            {
+              label: "Udskyd med begrundelse",
+              onSelect: () => setUdskudOpen(true),
+            },
+            ...(onHandoff
               ? [
                   {
                     label: handoffPending
@@ -445,10 +453,17 @@ function TaskCard({
                     onSelect: onHandoff,
                   },
                 ]
-              : []
-          }
+              : []),
+          ]}
         />
       </div>
+      <UdskudTaskDialog
+        open={udskudOpen}
+        onOpenChange={setUdskudOpen}
+        taskId={task.id}
+        taskLabel={label}
+        currentDueDate={task.due_date}
+      />
     </article>
   );
 }
