@@ -136,6 +136,29 @@ I applikationskode (supabase-js): brug `range(from, to)` i løkker af
 1000 med samme sum-tjek. `count > body.length` er en afkortning,
 uanset kilden.
 
+## `init_state`-viewet skal blive `security_invoker=off` (23. sep 2026)
+
+Supabase Advisors flagger `public.init_state` som `security_definer_view`.
+**Advarslen skal ignoreres. Rør den ikke.**
+
+Viewet tæller rækker i `public.sales` og læses af `authProvider.ts` **før
+login** — det er hvad der afgør om der findes en admin-konto i systemet
+(og dermed om `/setup`-flowet skal vises i stedet for `/login`). Med
+`security_invoker=on` skulle den anonyme besøgende have `SELECT` på
+`sales` for at loginsiden kunne virke, hvilket ville åbne kunde-
+brugerkartoteket for enhver på internettet.
+
+**Konfigurationen er bevidst.** Sat i Atomic CRM's egen migration
+`20240808141826_init_state_configure.sql` og bekræftet af brief 80 tillæg
+(23. sep 2026). Den er nu den eneste ERROR-advarsel tilbage, hvilket
+gør den farlig: en fremtidig oprydning kan læse den som glemt og
+"fikse" den — og bryde loginsiden i samme greb.
+
+**Regel:** aldrig `ALTER VIEW init_state SET (security_invoker = on)`.
+Aldrig fjern `init_state` fra `security_definer_view`-advarslens
+undtagelser. Hvis Supabase Advisors' liste ryddes helt, står grunden
+her.
+
 ## Teknisk gæld: `open_orders_lago.lagerstatus` er ikke længere sandheden (22. sep 2026)
 
 To divergenser mellem tabellen og det, sælgeren ser på skærmen. Begge

@@ -1,0 +1,462 @@
+{
+  "generated_at": "2026-09-23T06:26:07.883Z",
+  "brief": "80",
+  "functions_after_migration": [
+    {
+      "proname": "block_write_when_impersonating",
+      "args": "",
+      "returns": "trigger",
+      "security_definer": true,
+      "anon_can_execute": false,
+      "auth_can_execute": true
+    },
+    {
+      "proname": "cleanup_note_attachments",
+      "args": "",
+      "returns": "trigger",
+      "security_definer": true,
+      "anon_can_execute": false,
+      "auth_can_execute": true
+    },
+    {
+      "proname": "close_matched_change_suggestions",
+      "args": "",
+      "returns": "integer",
+      "security_definer": true,
+      "anon_can_execute": false,
+      "auth_can_execute": true
+    },
+    {
+      "proname": "dashboard_datahuller_lago",
+      "args": "",
+      "returns": "jsonb",
+      "security_definer": false,
+      "anon_can_execute": false,
+      "auth_can_execute": true
+    },
+    {
+      "proname": "dashboard_ringeliste_lago",
+      "args": "p_limit integer DEFAULT 20",
+      "returns": "jsonb",
+      "security_definer": false,
+      "anon_can_execute": false,
+      "auth_can_execute": true
+    },
+    {
+      "proname": "derive_sales_id_from_visma",
+      "args": "",
+      "returns": "jsonb",
+      "security_definer": true,
+      "anon_can_execute": false,
+      "auth_can_execute": true
+    },
+    {
+      "proname": "end_impersonation",
+      "args": "log_id bigint, reason text DEFAULT 'manual'::text",
+      "returns": "void",
+      "security_definer": true,
+      "anon_can_execute": false,
+      "auth_can_execute": true
+    },
+    {
+      "proname": "enforce_role_change_by_admin",
+      "args": "",
+      "returns": "trigger",
+      "security_definer": true,
+      "anon_can_execute": false,
+      "auth_can_execute": true
+    },
+    {
+      "proname": "get_avatar_for_email",
+      "args": "email text",
+      "returns": "text",
+      "security_definer": false,
+      "anon_can_execute": false,
+      "auth_can_execute": true
+    },
+    {
+      "proname": "get_domain_favicon",
+      "args": "domain_name text",
+      "returns": "text",
+      "security_definer": false,
+      "anon_can_execute": false,
+      "auth_can_execute": true
+    },
+    {
+      "proname": "get_note_attachments_function_url",
+      "args": "",
+      "returns": "text",
+      "security_definer": false,
+      "anon_can_execute": false,
+      "auth_can_execute": true
+    },
+    {
+      "proname": "get_user_id_by_email",
+      "args": "email text",
+      "returns": "TABLE(id uuid)",
+      "security_definer": true,
+      "anon_can_execute": false,
+      "auth_can_execute": false
+    },
+    {
+      "proname": "handle_company_saved",
+      "args": "",
+      "returns": "trigger",
+      "security_definer": false,
+      "anon_can_execute": false,
+      "auth_can_execute": true
+    },
+    {
+      "proname": "handle_contact_note_created_or_updated",
+      "args": "",
+      "returns": "trigger",
+      "security_definer": true,
+      "anon_can_execute": false,
+      "auth_can_execute": true
+    },
+    {
+      "proname": "handle_contact_saved",
+      "args": "",
+      "returns": "trigger",
+      "security_definer": false,
+      "anon_can_execute": false,
+      "auth_can_execute": true
+    },
+    {
+      "proname": "handle_new_user",
+      "args": "",
+      "returns": "trigger",
+      "security_definer": true,
+      "anon_can_execute": false,
+      "auth_can_execute": true
+    },
+    {
+      "proname": "handle_update_user",
+      "args": "",
+      "returns": "trigger",
+      "security_definer": true,
+      "anon_can_execute": false,
+      "auth_can_execute": true
+    },
+    {
+      "proname": "is_admin",
+      "args": "",
+      "returns": "boolean",
+      "security_definer": true,
+      "anon_can_execute": false,
+      "auth_can_execute": true
+    },
+    {
+      "proname": "lowercase_email_jsonb",
+      "args": "",
+      "returns": "trigger",
+      "security_definer": false,
+      "anon_can_execute": false,
+      "auth_can_execute": true
+    },
+    {
+      "proname": "map_branche_kode",
+      "args": "",
+      "returns": "integer",
+      "security_definer": true,
+      "anon_can_execute": false,
+      "auth_can_execute": true
+    },
+    {
+      "proname": "mark_activity_done",
+      "args": "activity_id bigint, new_date date DEFAULT NULL::date",
+      "returns": "void",
+      "security_definer": true,
+      "anon_can_execute": false,
+      "auth_can_execute": true
+    },
+    {
+      "proname": "merge_contacts",
+      "args": "loser_id bigint, winner_id bigint",
+      "returns": "bigint",
+      "security_definer": false,
+      "anon_can_execute": false,
+      "auth_can_execute": true
+    },
+    {
+      "proname": "record_ai_suggestion_outcomes",
+      "args": "llm_call_id bigint, returned_count integer, added_count integer, rejected_count integer, ignored_count integer",
+      "returns": "void",
+      "security_definer": true,
+      "anon_can_execute": false,
+      "auth_can_execute": true
+    },
+    {
+      "proname": "set_sales_id_default",
+      "args": "",
+      "returns": "trigger",
+      "security_definer": false,
+      "anon_can_execute": false,
+      "auth_can_execute": true
+    },
+    {
+      "proname": "soft_delete_customer_activity",
+      "args": "activity_id bigint, undo boolean DEFAULT false",
+      "returns": "void",
+      "security_definer": true,
+      "anon_can_execute": false,
+      "auth_can_execute": true
+    },
+    {
+      "proname": "sync_lago_role_to_administrator",
+      "args": "",
+      "returns": "trigger",
+      "security_definer": false,
+      "anon_can_execute": false,
+      "auth_can_execute": true
+    },
+    {
+      "proname": "trg_recompute_last_visit_at",
+      "args": "",
+      "returns": "trigger",
+      "security_definer": true,
+      "anon_can_execute": false,
+      "auth_can_execute": true
+    },
+    {
+      "proname": "update_activity",
+      "args": "activity_id bigint, new_note text DEFAULT NULL::text, new_date date DEFAULT NULL::date, new_type_code integer DEFAULT NULL::integer",
+      "returns": "void",
+      "security_definer": true,
+      "anon_can_execute": false,
+      "auth_can_execute": true
+    }
+  ],
+  "rpc_call_stats": [
+    {
+      "calls": 8361,
+      "rows": 8361,
+      "query_prefix": "WITH pgrst_source AS ( SELECT \"public\".\"app_state_lago\".\"id\", \"public\".\"app_state_lago\".\"vedligehold\", \"public\".\"app_state_lago\".\"besked\", \"public\".\"app_state_lago\".\"slutter\", \"public\".\"app_state_lago"
+    },
+    {
+      "calls": 6429,
+      "rows": 6429,
+      "query_prefix": "WITH pgrst_source AS (UPDATE \"public\".\"companies_lago\" SET \"ansvarlig\" = \"pgrst_body\".\"ansvarlig\", \"branche\" = \"pgrst_body\".\"branche\", \"distrikt\" = \"pgrst_body\".\"distrikt\", \"er_web_kunde\" = \"pgrst_bod"
+    },
+    {
+      "calls": 6345,
+      "rows": 6345,
+      "query_prefix": "WITH pgrst_source AS (UPDATE \"public\".\"companies\" SET \"address\" = \"pgrst_body\".\"address\", \"city\" = \"pgrst_body\".\"city\", \"country\" = \"pgrst_body\".\"country\", \"name\" = \"pgrst_body\".\"name\", \"phone_number\""
+    },
+    {
+      "calls": 2916,
+      "rows": 2916,
+      "query_prefix": "WITH pgrst_source AS (UPDATE \"public\".\"companies\" SET \"address\" = \"pgrst_body\".\"address\", \"city\" = \"pgrst_body\".\"city\", \"country\" = \"pgrst_body\".\"country\", \"name\" = \"pgrst_body\".\"name\", \"phone_number\""
+    },
+    {
+      "calls": 2079,
+      "rows": 2079,
+      "query_prefix": "WITH pgrst_source AS (UPDATE \"public\".\"companies_lago\" SET \"ansvarlig\" = \"pgrst_body\".\"ansvarlig\", \"branche\" = \"pgrst_body\".\"branche\", \"distrikt\" = \"pgrst_body\".\"distrikt\", \"er_web_kunde\" = \"pgrst_bod"
+    },
+    {
+      "calls": 1632,
+      "rows": 1632,
+      "query_prefix": "WITH pgrst_source AS ( SELECT \"public\".\"lago_settings\".\"value\" FROM \"public\".\"lago_settings\" WHERE  \"public\".\"lago_settings\".\"key\" = $1   LIMIT $2 OFFSET $3 )  SELECT $4::bigint AS total_result_set, p"
+    },
+    {
+      "calls": 1230,
+      "rows": 1230,
+      "query_prefix": "WITH pgrst_source AS ( SELECT \"public\".\"configuration\".* FROM \"public\".\"configuration\" WHERE  \"public\".\"configuration\".\"id\" = $1   LIMIT $2 OFFSET $3 )  SELECT $4::bigint AS total_result_set, pg_catal"
+    },
+    {
+      "calls": 1210,
+      "rows": 1210,
+      "query_prefix": "WITH pgrst_source AS ( SELECT \"public\".\"sales\".\"administrator\" FROM \"public\".\"sales\" WHERE  \"public\".\"sales\".\"id\" = $1   LIMIT $2 OFFSET $3 )  SELECT $4::bigint AS total_result_set, pg_catalog.count(_"
+    },
+    {
+      "calls": 1118,
+      "rows": 1118,
+      "query_prefix": "WITH pgrst_source AS ( SELECT \"public\".\"sync_runs_lago\".\"koert_at\", \"public\".\"sync_runs_lago\".\"datasaet\" FROM \"public\".\"sync_runs_lago\" WHERE  \"public\".\"sync_runs_lago\".\"datasaet\" = ANY ($1)   ORDER B"
+    },
+    {
+      "calls": 1099,
+      "rows": 1099,
+      "query_prefix": "WITH pgrst_source AS ( SELECT \"public\".\"open_orders_lago\".\"ordre_nr\" FROM \"public\".\"open_orders_lago\" WHERE  \"public\".\"open_orders_lago\".\"er_testdata\" = $1   LIMIT $2 OFFSET $3 ) , pgrst_source_count "
+    },
+    {
+      "calls": 1099,
+      "rows": 1099,
+      "query_prefix": "WITH pgrst_source AS ( SELECT \"public\".\"sales_monthly_lago\".\"visma_customer_no\" FROM \"public\".\"sales_monthly_lago\" WHERE  \"public\".\"sales_monthly_lago\".\"er_testdata\" = $1   LIMIT $2 OFFSET $3 ) , pgrs"
+    },
+    {
+      "calls": 1074,
+      "rows": 1074,
+      "query_prefix": "WITH pgrst_source AS ( SELECT \"public\".\"companies\".\"id\", \"public\".\"companies\".\"name\", \"public\".\"companies\".\"sales_id\", \"public\".\"companies\".\"city\", \"public\".\"companies\".\"sector\", row_to_json(\"companie"
+    },
+    {
+      "calls": 987,
+      "rows": 987,
+      "query_prefix": "WITH pgrst_source AS (UPDATE \"public\".\"companies_lago\" SET \"adresse2\" = \"pgrst_body\".\"adresse2\", \"ansvarlig\" = \"pgrst_body\".\"ansvarlig\", \"branche\" = \"pgrst_body\".\"branche\", \"distrikt\" = \"pgrst_body\".\""
+    },
+    {
+      "calls": 917,
+      "rows": 917,
+      "query_prefix": "WITH pgrst_source AS ( SELECT \"public\".\"contacts_summary\".* FROM \"public\".\"contacts_summary\"  ORDER BY \"public\".\"contacts_summary\".\"id\" DESC NULLS LAST LIMIT $1 OFFSET $2 ) , pgrst_source_count AS (SE"
+    },
+    {
+      "calls": 913,
+      "rows": 913,
+      "query_prefix": "WITH pgrst_source AS (INSERT INTO \"public\".\"companies\"(\"name\") SELECT \"pgrst_body\".\"name\" FROM (SELECT $1 AS json_data) pgrst_payload, LATERAL (SELECT \"name\" FROM json_to_record(pgrst_payload.json_dat"
+    },
+    {
+      "calls": 913,
+      "rows": 913,
+      "query_prefix": "WITH pgrst_source AS (INSERT INTO \"public\".\"companies_lago\"(\"company_id\", \"distrikt\", \"is_active\", \"kundetype\", \"segment\", \"updated_at\", \"visma_customer_no\", \"visma_sales_code\") SELECT \"pgrst_body\".\"c"
+    },
+    {
+      "calls": 904,
+      "rows": 904,
+      "query_prefix": "WITH pgrst_source AS ( SELECT \"public\".\"customer_activities_lago\".\"company_id\", \"public\".\"customer_activities_lago\".\"activity_date\" FROM \"public\".\"customer_activities_lago\" WHERE  \"public\".\"customer_a"
+    },
+    {
+      "calls": 887,
+      "rows": 887,
+      "query_prefix": "WITH pgrst_source AS ( SELECT \"public\".\"company_notes_lago\".* FROM \"public\".\"company_notes_lago\"  ORDER BY \"public\".\"company_notes_lago\".\"id\" DESC NULLS LAST LIMIT $1 OFFSET $2 ) , pgrst_source_count "
+    },
+    {
+      "calls": 886,
+      "rows": 886,
+      "query_prefix": "WITH pgrst_source AS ( SELECT \"public\".\"contact_notes\".* FROM \"public\".\"contact_notes\"  ORDER BY \"public\".\"contact_notes\".\"id\" DESC NULLS LAST LIMIT $1 OFFSET $2 ) , pgrst_source_count AS (SELECT $3  "
+    },
+    {
+      "calls": 849,
+      "rows": 849,
+      "query_prefix": "WITH pgrst_source AS ( SELECT \"public\".\"companies_lago\".\"company_id\", \"public\".\"companies_lago\".\"next_visit_planned\", \"public\".\"companies_lago\".\"next_visit_note\", row_to_json(\"companies_lago_companies"
+    },
+    {
+      "calls": 796,
+      "rows": 796,
+      "query_prefix": "WITH pgrst_source AS ( SELECT \"public\".\"companies\".\"id\", \"public\".\"companies\".\"name\", \"public\".\"companies\".\"sector\", \"public\".\"companies\".\"size\", \"public\".\"companies\".\"website\", \"public\".\"companies\".\""
+    },
+    {
+      "calls": 795,
+      "rows": 795,
+      "query_prefix": "WITH pgrst_source AS ( SELECT \"public\".\"company_notes_lago\".\"id\", \"public\".\"company_notes_lago\".\"company_id\", \"public\".\"company_notes_lago\".\"contact_id\", \"public\".\"company_notes_lago\".\"text\", \"public\""
+    },
+    {
+      "calls": 767,
+      "rows": 767,
+      "query_prefix": "WITH pgrst_source AS ( SELECT \"public\".\"companies\".\"id\", \"public\".\"companies\".\"name\", \"public\".\"companies\".\"sales_id\", \"public\".\"companies\".\"city\", \"public\".\"companies\".\"sector\", row_to_json(\"companie"
+    },
+    {
+      "calls": 705,
+      "rows": 705,
+      "query_prefix": "WITH pgrst_source AS ( SELECT \"public\".\"lago_sellers\".\"id\", \"public\".\"lago_sellers\".\"visma_sales_code\", \"public\".\"lago_sellers\".\"full_name\", \"public\".\"lago_sellers\".\"email\", \"public\".\"lago_sellers\".\"i"
+    },
+    {
+      "calls": 702,
+      "rows": 702,
+      "query_prefix": "WITH pgrst_source AS ( SELECT \"public\".\"sales\".\"lago_role\" FROM \"public\".\"sales\" WHERE  \"public\".\"sales\".\"id\" = $1   LIMIT $2 OFFSET $3 )  SELECT $4::bigint AS total_result_set, pg_catalog.count(_post"
+    },
+    {
+      "calls": 668,
+      "rows": 668,
+      "query_prefix": "WITH pgrst_source AS ( SELECT \"public\".\"customer_activities_lago\".\"id\", \"public\".\"customer_activities_lago\".\"company_id\", \"public\".\"customer_activities_lago\".\"activity_date\", \"public\".\"customer_activi"
+    },
+    {
+      "calls": 664,
+      "rows": 664,
+      "query_prefix": "WITH pgrst_source AS ( SELECT \"public\".\"contacts\".\"id\", \"public\".\"contacts\".\"first_name\", \"public\".\"contacts\".\"last_name\", \"public\".\"contacts\".\"title\", \"public\".\"contacts\".\"status\", \"public\".\"contacts"
+    },
+    {
+      "calls": 663,
+      "rows": 663,
+      "query_prefix": "WITH pgrst_source AS ( SELECT \"public\".\"sales\".\"id\" FROM \"public\".\"sales\" WHERE  \"public\".\"sales\".\"lago_role\" = $1   LIMIT $2 OFFSET $3 )  SELECT $4::bigint AS total_result_set, pg_catalog.count(_post"
+    },
+    {
+      "calls": 630,
+      "rows": 630,
+      "query_prefix": "WITH pgrst_source AS (UPDATE \"public\".\"companies_lago\" SET \"adresse2\" = \"pgrst_body\".\"adresse2\", \"ansvarlig\" = \"pgrst_body\".\"ansvarlig\", \"branche\" = \"pgrst_body\".\"branche\", \"distrikt\" = \"pgrst_body\".\""
+    },
+    {
+      "calls": 630,
+      "rows": 630,
+      "query_prefix": "WITH pgrst_source AS ( SELECT \"public\".\"customer_activities_lago\".\"company_id\", \"public\".\"customer_activities_lago\".\"activity_type\", \"public\".\"customer_activities_lago\".\"description\", row_to_json(\"cus"
+    },
+    {
+      "calls": 501,
+      "rows": 501,
+      "query_prefix": "WITH pgrst_source AS ( SELECT \"public\".\"customer_activities_lago\".\"id\", \"public\".\"customer_activities_lago\".\"company_id\", \"public\".\"customer_activities_lago\".\"activity_date\", \"public\".\"customer_activi"
+    },
+    {
+      "calls": 472,
+      "rows": 472,
+      "query_prefix": "WITH pgrst_source AS (INSERT INTO \"public\".\"sales_monthly_lago\"(\"aar\", \"antal\", \"belob\", \"er_testdata\", \"kilde\", \"maaned\", \"produktnr\", \"salgstype\", \"synced_at\", \"visma_customer_no\") SELECT \"pgrst_bod"
+    },
+    {
+      "calls": 438,
+      "rows": 438,
+      "query_prefix": "WITH pgrst_source AS ( SELECT \"public\".\"companies\".\"id\", \"public\".\"companies\".\"name\", \"public\".\"companies\".\"sales_id\", \"public\".\"companies\".\"city\", \"public\".\"companies\".\"sector\", row_to_json(\"companie"
+    },
+    {
+      "calls": 435,
+      "rows": 435,
+      "query_prefix": "WITH pgrst_source AS ( SELECT \"public\".\"companies\".\"id\", \"public\".\"companies\".\"name\", \"public\".\"companies\".\"sales_id\", \"public\".\"companies\".\"city\", \"public\".\"companies\".\"sector\", row_to_json(\"companie"
+    },
+    {
+      "calls": 427,
+      "rows": 427,
+      "query_prefix": "WITH pgrst_source AS ( SELECT \"public\".\"tasks\".\"id\" FROM \"public\".\"tasks\" WHERE  ( \"public\".\"tasks\".\"sales_id\" IS NULL OR  \"public\".\"tasks\".\"sales_id\" = ANY ($1) ) AND  \"public\".\"tasks\".\"done_date\" IS"
+    },
+    {
+      "calls": 417,
+      "rows": 417,
+      "query_prefix": "WITH pgrst_source AS ( SELECT \"public\".\"tasks\".\"id\", \"public\".\"tasks\".\"text\", \"public\".\"tasks\".\"type\", \"public\".\"tasks\".\"due_date\", \"public\".\"tasks\".\"contact_id\", \"public\".\"tasks\".\"sales_id\", row_to_j"
+    },
+    {
+      "calls": 413,
+      "rows": 413,
+      "query_prefix": "WITH pgrst_source AS ( SELECT \"public\".\"tasks\".\"id\", \"public\".\"tasks\".\"text\", \"public\".\"tasks\".\"due_date\", \"public\".\"tasks\".\"type\", \"public\".\"tasks\".\"contact_id\", \"public\".\"tasks\".\"sales_id\" FROM \"pub"
+    },
+    {
+      "calls": 370,
+      "rows": 370,
+      "query_prefix": "WITH pgrst_source AS ( SELECT \"public\".\"customer_activities_lago\".\"sales_id\", \"public\".\"customer_activities_lago\".\"activity_type_code\", \"public\".\"customer_activities_lago\".\"activity_date\", \"public\".\"c"
+    },
+    {
+      "calls": 361,
+      "rows": 361,
+      "query_prefix": "WITH pgrst_source AS ( SELECT \"public\".\"sales_monthly_lago\".\"visma_customer_no\" FROM \"public\".\"sales_monthly_lago\" WHERE  \"public\".\"sales_monthly_lago\".\"visma_customer_no\" = $1   LIMIT $2 OFFSET $3 ) "
+    },
+    {
+      "calls": 361,
+      "rows": 361,
+      "query_prefix": "WITH pgrst_source AS ( SELECT \"public\".\"sales_monthly_lago\".\"aar\", \"public\".\"sales_monthly_lago\".\"maaned\", \"public\".\"sales_monthly_lago\".\"belob\" FROM \"public\".\"sales_monthly_lago\" WHERE  \"public\".\"sal"
+    }
+  ],
+  "attachments_bucket": [
+    {
+      "id": "attachments",
+      "name": "attachments",
+      "public": true
+    }
+  ],
+  "attachments_objects": [
+    {
+      "name": "0.23465129298819865.png",
+      "owner": "dea91388-8130-4bf3-87ec-0c74bdd3492d",
+      "created_at": "2026-09-02 12:33:48.893045+00",
+      "size": "30839",
+      "mimetype": "image/png"
+    },
+    {
+      "name": "0.05634537172157583.png",
+      "owner": "dea91388-8130-4bf3-87ec-0c74bdd3492d",
+      "created_at": "2026-09-02 12:33:49.043129+00",
+      "size": "30840",
+      "mimetype": "image/png"
+    }
+  ],
+  "sync_lago_role_to_administrator_proconfig": [
+    {
+      "proname": "sync_lago_role_to_administrator",
+      "proconfig": ["search_path=public, pg_temp"]
+    }
+  ],
+  "remaining_anon_executable": []
+}

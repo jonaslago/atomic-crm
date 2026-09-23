@@ -48,3 +48,43 @@ Ingen navne/telefonnumre/e-mails, men `company_id` er indirekte identificerende.
 Nej. Tabellen var eksponeret men urørt, backup-dataene er bevaret, og fladen er lukket
 uden adfærdsændring. Fejlen har efterladt et spor (denne mappe) — den næste midlertidige
 tabel, der bliver permanent, kan findes ved at søge efter noget lignende.
+
+---
+
+## Brief 80 — anon kunne kalde skrivende RPC'er (23. sep)
+
+**Advarsel:** Supabase Advisors flaggede 16 funktioner som
+`anon_security_definer_function_executable` — kaldbare uden login via
+`/rest/v1/rpc/<fn>`. Kritiske skrivende blandt dem: `update_activity`,
+`soft_delete_customer_activity`, `merge_contacts`,
+`derive_sales_id_from_visma`, `map_branche_kode`.
+
+### Blev de kaldt af anon?
+
+**Pålidelig påvisning kræver PostgREST-logs, som Management API ikke gav
+adgang til fra denne scope.** `pg_stat_statements` viser 15 kald til
+`derive_sales_id_from_visma` og 13 til `end_impersonation` via PostgREST
+i det gemte vindue, men statistikken viser ikke effektiv rolle
+(userid = `authenticator`, ikke `anon`/`authenticated` som PostgREST
+skifter til efter connection). Se `brief-80-anon-execute-audit.json`.
+
+**Vurdering:** CRM'et kalder disse RPC'er som indlogget bruger
+(verificeret via grep i `src/`); tallene matcher normal drift.
+
+### Handling
+
+Migrations `20260923150000` + `20260923150001` fjernede EXECUTE fra
+både `anon` og `PUBLIC` på alle funktioner i `public`. Efter:
+- **0 funktioner har anon-execute** (før: 27)
+- 27 kaldbare funktioner har fortsat authenticated-execute (intakt)
+- Trigger-funktioner uberørt (trigger-mekanismen kalder dem separat)
+- `sync_lago_role_to_administrator` har nu `search_path=public, pg_temp`
+  (før: mutable)
+
+### Åbent
+
+- **`attachments`-bucket er public med 2 PNG-filer** (30 KB hver, uploadet
+  2. sep 2026 af user `dea91388...`). Jonas beslutter om bucketen skal
+  gøres private eller filerne slettes.
+- **Leaked password protection** slås til i dashboardet af Jonas
+  (brief 80 §4).
