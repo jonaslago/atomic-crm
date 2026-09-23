@@ -33,9 +33,13 @@ CREATE INDEX IF NOT EXISTS task_events_lago_type_idx
     ON public.task_events_lago (event_type, event_at DESC);
 
 COMMENT ON TABLE public.task_events_lago IS
-    'Brief 76 tillæg A (23. sep 2026): event-log for procesdata på tasks '
-    '(udskyd, send-videre). Erstatter ILIKE-match på tasks.text som '
-    'kendt skrøbelighed. Bygges én bruger ad gangen — kun udskyd i dag.';
+    'Brief 76 tillæg A (23. sep 2026): event-log for procesdata på tasks. '
+    'Bruges i dag KUN til event_type=udskudt (FS-20). '
+    'Migreringsmål for event_type=sendt_til_kontoret: MineOpgaverWidget '
+    'bruger i dag ILIKE-match på tasks.text (''— Sendt til kontoret DD. '
+    'mmm YYYY af Fornavn Efternavn'') for at vise send-videre-historikken. '
+    'Det er skrøbeligt fordi sælgeren kan redigere teksten væk. Næste '
+    'runde flytter matchen hertil.';
 
 COMMENT ON COLUMN public.task_events_lago.event_af IS
     'auth.uid() på den bruger der udførte handlingen — den, der '

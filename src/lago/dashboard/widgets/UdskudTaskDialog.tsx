@@ -1,5 +1,5 @@
 import { CalendarClock } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
@@ -60,7 +60,7 @@ function useUdskydTask() {
     mutationFn: async (input: {
       taskId: number;
       nyDato: string;
-      begrundelse: string;
+      begrundelse: string | null;
       gammelDato: string | null;
     }) => {
       const supabase = getSupabaseClient();
@@ -115,22 +115,27 @@ export function UdskudTaskDialog({
   const [date, setDate] = useState<string>("");
   const [note, setNote] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
+  const dateInputRef = useRef<HTMLInputElement>(null);
+
+  const iMorgen = (): string => {
+    const d = new Date();
+    d.setDate(d.getDate() + 1);
+    return toLocalDateIso(d);
+  };
+  const omEnUge = (): string => {
+    const d = new Date();
+    d.setDate(d.getDate() + 7);
+    return toLocalDateIso(d);
+  };
 
   useEffect(() => {
     if (!open) return;
     setError(null);
     setNote("");
-    // Forslag: syv dage fra i dag. Sælger kan ændre frit.
-    if (currentDueDate) {
-      const d = new Date(currentDueDate);
-      d.setDate(d.getDate() + 7);
-      setDate(toLocalDateIso(d));
-    } else {
-      const d = new Date();
-      d.setDate(d.getDate() + 7);
-      setDate(toLocalDateIso(d));
-    }
-  }, [open, currentDueDate]);
+    // Forslag: én uge frem. Sælger kan ændre frit via knappen "I morgen"
+    // eller ved at klikke direkte i dato-feltet.
+    setDate(omEnUge());
+  }, [open]);
 
   const submit = () => {
     setError(null);
@@ -138,16 +143,15 @@ export function UdskudTaskDialog({
       setError("Ny dato skal vælges.");
       return;
     }
-    if (!note.trim()) {
-      setError("Skriv en begrundelse — det er hele pointen.");
-      return;
-    }
+    // Brief 76 tillæg A opfølgning (23. sep 2026): begrundelse er
+    // VALGFRI. Ellers skriver folk "x" for at komme igennem, og feltet
+    // bliver værdiløst. Tomt = null i event-log.
     const gammelDato = currentDueDate ? currentDueDate.substring(0, 10) : null;
     mutation.mutate(
       {
         taskId,
         nyDato: date,
-        begrundelse: note.trim(),
+        begrundelse: note.trim() || null,
         gammelDato,
       },
       {
@@ -161,6 +165,25 @@ export function UdskudTaskDialog({
         },
       },
     );
+  };
+
+  const openDatePicker = () => {
+    const el = dateInputRef.current;
+    if (!el) return;
+    // Nogle browsere (Safari mobil) understøtter showPicker(); ellers
+    // fallback til focus + click.
+    const anyEl = el as HTMLInputElement & { showPicker?: () => void };
+    if (typeof anyEl.showPicker === "function") {
+      try {
+        anyEl.showPicker();
+        return;
+      } catch {
+        // showPicker() kan kaste hvis input ikke er visible/enabled;
+        // fald igennem til focus.
+      }
+    }
+    el.focus();
+    el.click();
   };
 
   return (
@@ -181,17 +204,52 @@ export function UdskudTaskDialog({
             <Label htmlFor="udskyd-date" className="text-sm">
               Ny dato
             </Label>
+            {/* Brief 76 tillæg A opfølgning (23. sep 2026): tre genveje
+                i en række, min-h-11 så de kan rammes på 390 px. De to
+                første prefyller feltet; "Vælg dato" åbner date-picker
+                programmatisk (fallback: focus + click). Input'et står
+                nedenfor så sælgeren altid kan se den valgte dato. */}
+            <div className="grid grid-cols-3 gap-2">
+              <Button
+                type="button"
+                variant={date === iMorgen() ? "default" : "outline"}
+                size="sm"
+                onClick={() => setDate(iMorgen())}
+                className="min-h-11"
+              >
+                I morgen
+              </Button>
+              <Button
+                type="button"
+                variant={date === omEnUge() ? "default" : "outline"}
+                size="sm"
+                onClick={() => setDate(omEnUge())}
+                className="min-h-11"
+              >
+                Om en uge
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={openDatePicker}
+                className="min-h-11"
+              >
+                Vælg dato
+              </Button>
+            </div>
             <Input
               id="udskyd-date"
+              ref={dateInputRef}
               type="date"
               value={date}
               onChange={(e) => setDate(e.target.value)}
-              autoFocus
             />
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="udskyd-note" className="text-sm">
-              Begrundelse
+              Begrundelse{" "}
+              <span className="text-[var(--fg-3)] font-normal">(valgfrit)</span>
             </Label>
             <Textarea
               id="udskyd-note"
