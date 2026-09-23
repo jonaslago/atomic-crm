@@ -51,7 +51,17 @@ interface TodaysRow {
   activityType?: string | null;
 }
 
-async function fetchTodaysVisits(mySalesId: number): Promise<TodaysRow[]> {
+interface MinDagData {
+  rows: TodaysRow[];
+  /** Brief 81 §5 (23. sep 2026): antal aktiviteter sælgeren har
+   *  markeret som gennemført i dag. Bruges kun til tom tilstand:
+   *  er der ingen planlagte tilbage OG N > 0, siger widget'en
+   *  "Dagens besøg er registreret · N i dag" i stedet for "planen
+   *  mangler". Samme filter som `plannedActivities` men done=true. */
+  doneToday: number;
+}
+
+async function fetchTodaysVisits(mySalesId: number): Promise<MinDagData> {
   const supabase = getSupabaseClient();
   const start = new Date();
   start.setHours(0, 0, 0, 0);
@@ -62,7 +72,7 @@ async function fetchTodaysVisits(mySalesId: number): Promise<TodaysRow[]> {
   const dd = String(start.getDate()).padStart(2, "0");
   const todayIso = `${yyyy}-${mm}-${dd}`;
 
-  const [plannedVisits, plannedActivities] = await Promise.all([
+  const [plannedVisits, plannedActivities, doneTodayCount] = await Promise.all([
     supabase
       .from("companies_lago")
       .select(
@@ -95,9 +105,19 @@ async function fetchTodaysVisits(mySalesId: number): Promise<TodaysRow[]> {
       .eq("sales_id", mySalesId)
       .eq("companies.companies_lago.is_visible_to_sales", true)
       .eq("companies.companies_lago.is_active", true),
+    // Brief 81 §5: tæller kun; ingen embed. Peter/Camilla giver 0 i dag
+    // (målt 23. sep), så tom-tilstand (a) vises for dem.
+    supabase
+      .from("customer_activities_lago")
+      .select("id", { count: "exact", head: true })
+      .eq("activity_date", todayIso)
+      .eq("done", true)
+      .is("deleted_at", null)
+      .eq("sales_id", mySalesId),
   ]);
   if (plannedVisits.error) throw plannedVisits.error;
   if (plannedActivities.error) throw plannedActivities.error;
+  if (doneTodayCount.error) throw doneTodayCount.error;
 
   const visitRows: TodaysRow[] = (
     (plannedVisits.data ?? []) as unknown as Array<{
@@ -150,7 +170,10 @@ async function fetchTodaysVisits(mySalesId: number): Promise<TodaysRow[]> {
     };
   });
 
-  return [...visitRows, ...activityRows];
+  return {
+    rows: [...visitRows, ...activityRows],
+    doneToday: doneTodayCount.count ?? 0,
+  };
 }
 
 const timeFmt = new Intl.DateTimeFormat("da-DK", {
@@ -175,7 +198,8 @@ export function MinDagWidget() {
     staleTime: 60_000,
   });
 
-  const rows = query.data ?? [];
+  const rows = query.data?.rows ?? [];
+  const doneToday = query.data?.doneToday ?? 0;
   const sorted = [...rows].sort((a, b) => {
     const aTime = formatTime(a.next_visit_planned);
     const bTime = formatTime(b.next_visit_planned);
@@ -185,6 +209,12 @@ export function MinDagWidget() {
   });
 
   const count = sorted.length;
+  // Brief 81 §5 (23. sep 2026): to tomme tilstande, ikke én. Ingen
+  // planlagte OG ingen registreringer i dag = planen mangler (a).
+  // Ingen planlagte tilbage, men N registreret = dagen er kørt (b).
+  // Forskellen betyder det modsatte — (a) skubber til at planlægge,
+  // (b) roser og lukker dagen.
+  const dagenErKoert = count === 0 && doneToday > 0;
   return (
     <WidgetShell
       title="Hvem skal jeg besøge i dag"
@@ -199,16 +229,23 @@ export function MinDagWidget() {
           : undefined
       }
       emptyState={
-        <div className="space-y-2">
-          <p>Ingen planlagte besøg i dag.</p>
-          <Link
-            to="/companies?filter=%7B%22priority_status%22%3A%22overdue%22%7D"
-            className="text-[var(--fg-2)] inline-flex items-center gap-1 text-sm font-medium no-underline hover:underline"
-          >
-            Se hvem der trænger til besøg
-            <Icon icon={ArrowRight} size="sm" />
-          </Link>
-        </div>
+        dagenErKoert ? (
+          <p>
+            Dagens besøg er registreret · {doneToday}{" "}
+            {doneToday === 1 ? "besøg" : "besøg"} i dag
+          </p>
+        ) : (
+          <div className="space-y-2">
+            <p>Der er ikke planlagt noget i dag.</p>
+            <Link
+              to="/companies?filter=%7B%22priority_status%22%3A%22overdue%22%7D"
+              className="text-[var(--fg-2)] inline-flex items-center gap-1 text-sm font-medium no-underline hover:underline"
+            >
+              Se hvem der trænger til besøg
+              <Icon icon={ArrowRight} size="sm" />
+            </Link>
+          </div>
+        )
       }
     >
       {/* Tillæg A §6: ingen klipning her — en planlagt dag er endelig. */}
