@@ -1,0 +1,21 @@
+-- Brief 80 §5-opfølgning (23. sep 2026) — attachments-bucket
+--
+-- Advisors flaggede storage.buckets.attachments som public og
+-- listbar. Jonas' beslutning: bucketen forbliver public (LAGO-logoet
+-- ligger der og læses fra loginsiden + som app-ikon via public URL),
+-- men listning skal væk — så en anon kan læse en fil på dens URL
+-- men ikke opdage hvilke andre filer der ligger.
+--
+-- Fil-audit 23. sep: begge to filer er logoer (identificeret via
+-- public.configuration.lightModeLogo + .darkModeLogo). Ingen mystisk
+-- tredje fil.
+--
+-- Efter denne migration:
+--  - Public bucket → direct-URL read virker for anon (public bucket
+--    er en storage-mekanisme, ikke RLS)
+--  - Attachments 1mt4rzk_0 (SELECT for authenticated) væk → ingen
+--    kan liste indholdet, hverken authenticated eller anon
+--  - Attachments 1mt4rzk_1 (INSERT) og _3 (DELETE) bevaret så
+--    Atomic-CRM's note-upload stadig virker
+
+DROP POLICY IF EXISTS "Attachments 1mt4rzk_0" ON storage.objects;
