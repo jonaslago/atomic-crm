@@ -46,8 +46,13 @@ export const ROLE_LAYOUTS: RoleLayout = {
   // companies.sales_id, så sælger-widgets returnerede fire tomme
   // kasser hver dag — det ligner et system i stykker mere end et
   // system uden data. Vil admin se en sælgers flade, sker det via
-  // impersonation (brief 27). Sælger-widgets kan lægges tilbage her
-  // hvis en admin senere også bliver tildelt kunder.
+  // impersonation (brief 27).
+  //
+  // Brief 76 tillæg A opfølgning (23. sep 2026): mine_opgaver er
+  // undtagelsen. Jonas har 8 åbne opgaver tildelt sig — de er ikke
+  // hans primære arbejde, men de er hans egne løfter, og han kunne
+  // ikke se dem nogen steder. Ligger nederst efter ledelsens_tal.
+  // Tom tilstand siger "Ingen åbne", ikke tom kasse.
   admin: [
     "ringelisten",
     "opfoelgninger_kontor",
@@ -55,5 +60,6 @@ export const ROLE_LAYOUTS: RoleLayout = {
     "forslag_rettelser",
     "seneste_registreringer",
     "ledelsens_tal",
+    "mine_opgaver",
   ],
 };
