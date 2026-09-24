@@ -53,7 +53,13 @@ type SortMode = "name" | "priority" | "last_visit";
 // Brief 48 §E (16. sep 2026): fire besøgsstatusser matcher Stitchs
 // venstre-skinne (Alle · Overskredet · Trænger snart · Ajour). Overskredet
 // dækker både overdue og never_visited — begge rødt i sidebar-tallet.
-type VisitStatusFilter = "any" | "overdue" | "soon" | "on_plan";
+// Brief 83 tillæg A (24. sep 2026): "ringeliste" er en fjerde besøgsstatus
+// — handlingslisten, ikke tilstanden. Reglen matcher RPC'ens
+// dashboard_ringeliste_lago med én tilføjelse (Jonas 24. sep): never_visited
+// er også med, "de skal jo afklares". Regel: (overdue AND days_overdue>=5)
+// eller never_visited, AND next_visit_planned IS NULL. Målt før udrulning:
+// 152 kunder (113 overdue ≥5 + 39 never_visited).
+type VisitStatusFilter = "any" | "ringeliste" | "overdue" | "soon" | "on_plan";
 
 // Brief 65 tillæg A §1 (18. sep 2026): segment-tooltip siger IKKE
 // intervallet. Intervallet er nu en pr-kunde-værdi (kan overstyres),
@@ -288,11 +294,13 @@ function summariseActiveFilters({
   );
   if (selectedVisitStatus !== "any") {
     parts.push(
-      selectedVisitStatus === "overdue"
-        ? "Overskredet"
-        : selectedVisitStatus === "soon"
-          ? "Trænger snart"
-          : "Ajour",
+      selectedVisitStatus === "ringeliste"
+        ? "Ringeliste"
+        : selectedVisitStatus === "overdue"
+          ? "Overskredet"
+          : selectedVisitStatus === "soon"
+            ? "Trænger snart"
+            : "Ajour",
     );
   }
   if (selectedDistrikter.size > 0) {
@@ -645,6 +653,18 @@ function FilterSidebar(props: FilterSidebarProps) {
           onSelect={(v) => props.onSelectVisitStatus(v as VisitStatusFilter)}
           count={props.visitStatusCounts.any}
         />
+        {/* Brief 83 tillæg A (24. sep 2026): handlingsliste — dem der
+            skal ringes op nu. Overdue >=5 dage eller aldrig besøgt,
+            uden planlagt aftale. Erstatter forsidens ringeliste-widget. */}
+        <RadioRow
+          name="visitStatus"
+          label="Ringeliste"
+          value="ringeliste"
+          selected={props.selectedVisitStatus}
+          onSelect={(v) => props.onSelectVisitStatus(v as VisitStatusFilter)}
+          count={props.visitStatusCounts.ringeliste}
+          countTone="red"
+        />
         <RadioRow
           name="visitStatus"
           label="Overskredet interval"
@@ -929,7 +949,16 @@ export function LagoCustomerList() {
       }
       if (selectedVisitStatus !== "any") {
         const s = r.priority.status;
-        if (selectedVisitStatus === "overdue") {
+        if (selectedVisitStatus === "ringeliste") {
+          // Brief 83 tillæg A: (overdue AND days_overdue>=5) eller
+          // never_visited, alle med next_visit_planned IS NULL.
+          if (r.extension?.next_visit_planned) return false;
+          if (s === "never_visited") {
+            /* passer */
+          } else if (s === "overdue" && (r.priority.daysOverdue ?? 0) >= 5) {
+            /* passer */
+          } else return false;
+        } else if (selectedVisitStatus === "overdue") {
           if (s !== "overdue" && s !== "never_visited") return false;
         } else if (selectedVisitStatus === "soon") {
           if (s !== "soon") return false;
@@ -1053,7 +1082,14 @@ export function LagoCustomerList() {
       }
       if (opts.visitStatus !== "any") {
         const s = r.priority.status;
-        if (opts.visitStatus === "overdue") {
+        if (opts.visitStatus === "ringeliste") {
+          if (r.extension?.next_visit_planned) return false;
+          if (s === "never_visited") {
+            /* passer */
+          } else if (s === "overdue" && (r.priority.daysOverdue ?? 0) >= 5) {
+            /* passer */
+          } else return false;
+        } else if (opts.visitStatus === "overdue") {
           if (s !== "overdue" && s !== "never_visited") return false;
         } else if (opts.visitStatus === "soon") {
           if (s !== "soon") return false;
@@ -1110,6 +1146,7 @@ export function LagoCustomerList() {
 
     const visitStatus: Record<VisitStatusFilter, number> = {
       any: forVisitStatus.length,
+      ringeliste: 0,
       overdue: 0,
       soon: 0,
       on_plan: 0,
@@ -1120,6 +1157,14 @@ export function LagoCustomerList() {
         visitStatus.overdue++;
       else if (status === "soon") visitStatus.soon++;
       else if (status === "on_plan") visitStatus.on_plan++;
+      // Brief 83 tillæg A: ringeliste-tælling er en delmængde af
+      // overdue+never_visited og skal beregnes separat med samme regel
+      // som filter-prædikatet.
+      const isRingeliste =
+        !r.extension?.next_visit_planned &&
+        (status === "never_visited" ||
+          (status === "overdue" && (r.priority.daysOverdue ?? 0) >= 5));
+      if (isRingeliste) visitStatus.ringeliste++;
     }
 
     // Distrikter og sælgere: alle værdier der findes i baseRows bevares

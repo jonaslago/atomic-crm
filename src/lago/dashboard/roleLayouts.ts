@@ -23,8 +23,12 @@ export const ROLE_LAYOUTS: RoleLayout = {
   // Brief 46 §3 (16. sep 2026): forslag_rettelser ligger mellem
   // datahuller og seneste_registreringer — samme flow, andet register:
   // datahuller = "vi har intet", forslag = "sælger foreslår noget andet".
+  //
+  // Brief 83 (24. sep 2026): "ringelisten" fjernet — ringelisten hører
+  // under Kunder. Kontorets forside skal vise kontorets arbejde, og
+  // 112 overskredne kunder er ikke Simons. Widget'en og RPC'en er
+  // bevaret (bruges når rangering på værdi bygges).
   kontor: [
-    "ringelisten",
     "opfoelgninger_kontor",
     "datahuller",
     "forslag_rettelser",
@@ -53,8 +57,10 @@ export const ROLE_LAYOUTS: RoleLayout = {
   // hans primære arbejde, men de er hans egne løfter, og han kunne
   // ikke se dem nogen steder. Ligger nederst efter ledelsens_tal.
   // Tom tilstand siger "Ingen åbne", ikke tom kasse.
+  // Brief 83 (24. sep 2026): "ringelisten" fjernet også her — samme
+  // beslutning som for kontor. Ringelisten er nu tilgængelig som
+  // "Ringeliste"-radio i kundelistens venstre-skinne.
   admin: [
-    "ringelisten",
     "opfoelgninger_kontor",
     "datahuller",
     "forslag_rettelser",
