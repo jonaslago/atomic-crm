@@ -62,39 +62,41 @@ async function fetchLedelsensTal(): Promise<SellerRow[]> {
   const weekStart = startOfWeekIso();
   const weekEnd = endOfWeekIso();
 
-  // Brief 71 §2 leverance A (21. sep 2026): sælger→CRM-bruger-kobling
-  // læses fra sales_code_map_lago.crm_sales_id, ikke lago_sellers.sales_id.
-  // Vi joiner over visma_sales_code — lago_sellers har navn+aktiv-flag,
-  // sales_code_map_lago har den kanoniske CRM-kobling.
-  const [sellersRes, mapRes] = await Promise.all([
-    supabase
-      .from("lago_sellers")
-      .select("visma_sales_code, full_name, active")
-      .eq("active", true),
-    supabase
-      .from("sales_code_map_lago")
-      .select("visma_sales_code, crm_sales_id")
-      .not("crm_sales_id", "is", null),
-  ]);
-  if (sellersRes.error) throw sellersRes.error;
-  if (mapRes.error) throw mapRes.error;
+  // Brief 82 §3 (24. sep 2026): reglen er "har kunder", ikke
+  // "lago_sellers.active = true". Rikke (marketing), Ole (ledelse)
+  // stod på listen fordi de har lago-konto — men uden kunder viser
+  // widget'en dem som sælgere med nul aktivitet. Nu vises kun sales-
+  // brugere hvor mindst én række i companies har sales_id = deres id.
+  //
+  // Målt før udrulning: Peter (136 kunder), Camilla (99), Jonas (10),
+  // Simon (3). Jonas' og Simons kunder ER faktisk tildelt dem via
+  // sales_code_map_lago; at de ikke kører ud er selvstændig indsigt
+  // som listen skal kunne vise.
+  //
+  // sales_code_map_lago-koblingen (brief 71 §2) er ikke længere
+  // nødvendig for at afgøre HVEM der vises — den er stadig relevant
+  // for VISMA→CRM-koden-mapping i andre steder, men her spørger vi
+  // basen direkte: hvem har mindst én kunde?
+  const sellersWithCustomers = await supabase
+    .from("sales")
+    .select("id, first_name, last_name, companies!inner(id)")
+    .not("companies", "is", null);
+  if (sellersWithCustomers.error) throw sellersWithCustomers.error;
 
-  const salesIdByCode = new Map<string, number>();
-  for (const m of (mapRes.data ?? []) as Array<{
-    visma_sales_code: string;
-    crm_sales_id: number;
-  }>) {
-    salesIdByCode.set(m.visma_sales_code, m.crm_sales_id);
-  }
-
+  // Dedup + build name. companies!inner giver én række pr. kunde-match,
+  // så samme sælger optræder flere gange.
+  const seenIds = new Set<number>();
   const sellers: Array<{ sales_id: number; full_name: string }> = [];
-  for (const row of (sellersRes.data ?? []) as Array<{
-    visma_sales_code: string;
-    full_name: string;
+  for (const row of (sellersWithCustomers.data ?? []) as Array<{
+    id: number;
+    first_name: string | null;
+    last_name: string | null;
   }>) {
-    const salesId = salesIdByCode.get(row.visma_sales_code);
-    if (salesId != null)
-      sellers.push({ sales_id: salesId, full_name: row.full_name });
+    if (seenIds.has(row.id)) continue;
+    seenIds.add(row.id);
+    const full =
+      `${row.first_name ?? ""} ${row.last_name ?? ""}`.trim() || `#${row.id}`;
+    sellers.push({ sales_id: row.id, full_name: full });
   }
   sellers.sort((a, b) => a.full_name.localeCompare(b.full_name, "da"));
   if (sellers.length === 0) return [];
