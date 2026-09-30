@@ -1,0 +1,144 @@
+/* LAGO CRM · designsystem v3 (brief 33, 16. sep 2026)
+ *
+ * Værdier fra Stitchs Tailwind-config — vores tokennavne bevaret så
+ * hver eneste komponent, der allerede bruger var(--fg) osv., arver
+ * uden at blive rørt.
+ *
+ * Skala: brief 33 §1A besluttet — brødtekst forbliver 16 px. Stitchs
+ * skala er flyttet ét trin op (body-md 16, body-sm 14, label-sm 13,
+ * intet under 12). Sælgerne er ikke tyve, og skærmen bruges i en bil
+ * i modlys.
+ *
+ * Turkis: brief 33 §1B — al turkis er ude af systemet. Sort er
+ * primærfarve. --a, --a-deep, --a-soft, --a-tint peger nu på neutral-
+ * paletten så komponenter der bruger dem falder ind i sort/neutralt.
+ * Ét sted at ændre, hele fladen skifter udseende.
+ */
+
+:root {
+  color-scheme: light; /* dark tilføjes senere med light-dark() */
+
+  /* --- 1. Skrift -------------------------------------------------- */
+  /* Brief 33 §5: Inter lokal (hentet via @fontsource i index.css). */
+  --f-ui: "Inter", system-ui, -apple-system, "Segoe UI", Helvetica, Arial,
+    sans-serif;
+
+  /* Flydende skala — behold clamp (brief §3): 14 px fast på laptop er
+   * for lille, 20 px fast på telefon er for stor. Stitchs værdier
+   * bruges som midtpunkt.
+   *
+   * 🔴 Brief 49 §1 (17. sep 2026): STØRRELSE skal ALTID skrives med
+   * `length:`-prefix i Tailwind — ellers tolker Tailwind det som en
+   * FARVE og udsender `color: var(--t-body)` uden font-size. Elementet
+   * arver så fra forælder (ofte `text-sm` = 14 px), og en `text-[var
+   * (--fg-3)]` på samme element bliver overrided af den ugyldige
+   * farve-erklæring.
+   *
+   * KORREKT:   text-[length:var(--t-body)]
+   * FORKERT:   text-[var(--t-body)]   ← udgiver sig for en farve
+   */
+  --t-display: clamp(2rem, 1.4rem + 3cqi, 3.25rem);
+  --t-title: clamp(1.375rem, 1.15rem + 1.1cqi, 1.75rem);
+  --t-figure: clamp(1.5rem, 1.2rem + 1.6cqi, 2.125rem); /* KPI-tal */
+  --t-body: 1rem;       /* body-md: 16 px */
+  --t-sec: 0.875rem;    /* body-sm: 14 px */
+  --t-meta: 0.8125rem;  /* label-sm: 13 px */
+  --t-label: 0.75rem;   /* mindste: 12 px — intet under */
+
+  /* --- 2. Læsbarhed, berøring & ikoner (gulve) -------------------- */
+  /* Stitchs tekst-palet. Alle tre står over 4,5:1 på hvid og surface-2. */
+  --fg: #1C1B1A;   /* tekst-primaer */
+  --fg-2: #54524F; /* tekst-sekundaer */
+  --fg-3: #8A8782; /* tekst-daempet */
+  /* Brief 54 §2a (17. sep 2026): endnu mere dæmpet — bruges til
+   * statusprikken på "no_urgency"-rækker (X/L kunder uden kadence).
+   * Prikken skal ALTID tegnes så navnene flugter; er der ingen
+   * status, står den grå — det er også et signal ("vi ved det ikke"). */
+  --fg-4: #C4C1BB; /* meget dæmpet, kun til placeholder-prikker o.l. */
+
+  /* Berøring — bevares uændret (bridge.css § 44 px) */
+  --tap: 44px;
+
+  /* Ikoner — bevares uændret */
+  --ic: 24px;
+  --ic-lg: 26px;
+  --ic-sm: 20px;
+  --ic-stroke: 1.9;
+
+  /* --- 3. Tokens -------------------------------------------------- */
+  /* Neutral flade — Stitchs værdier.
+   *
+   * Brief 34 §0 (16. sep 2026): fem flader i niveauer, ikke tre.
+   *   0 — canvas    → sidens bund
+   *   1 — surface-1 → et panel/en række (subtle mørkere end canvas)
+   *   2 — surface   → indstik INDE i et panel (hvid)
+   *   3 — surface-2 → alternativ neutral flade
+   *   3 — surface-3 → sekundær knap
+   *
+   * Adskillelsen mellem sektioner er dette hierarki, ikke rammer eller
+   * streger. Brief 32 tog fejl af det og fjernede rammerne uden at
+   * lægge noget tilbage — det er hele forklaringen på "rodet Hjem".
+   */
+  --ink: #1C1B1A;         /* primary (sort, ikke turkis længere) */
+  --canvas: #F9F8F6;      /* baggrund */
+  --surface-1: #F4F3F1;   /* surface-container-low  — panel/række */
+  --surface: #FFFFFF;     /* surface-container-lowest — indstik inde i panel */
+  --surface-2: #EFEEEC;   /* surface-container */
+  --surface-3: #E3E2E0;   /* surface-container-highest — sekundær knap */
+  --line: #E5E3DF;        /* skillelinje */
+  --line-strong: #CCC6BD; /* outline-variant */
+
+  /* Accent — TURKIS UDGÅR (brief 33 §1B).
+   *
+   * Tokennavnene bevares så komponenter der bruger var(--a-deep) osv.
+   * ikke behøver ændringer, men værdierne peger nu på sort/neutralt.
+   * Semantisk: hvor der før var teal-accent er der nu blæk. Turkis
+   * gradient og soft-accent har ingen mening i et sort/neutralt
+   * system og mappes til enten --ink eller --surface-2. */
+  --a: var(--ink);            /* accent → sort */
+  --a-deep: var(--ink);       /* mørk accent → sort */
+  --a-soft: var(--fg-3);      /* soft accent → dæmpet neutral */
+  --a-tint: var(--surface-2); /* accent-baggrund → neutral flade */
+  --a-grad: var(--ink);       /* var en teal-gradient — nu solid sort */
+
+  /* Status — betyder altid noget (rød/gul/grøn/grå/blå).
+   * Stitchs status-familier: bg og fg parret pr. familie.
+   * --st-*-solid bruges kun til bar/dot; må ikke være tekst-baggrund. */
+  --st-red: #A32020;
+  --st-red-bg: #F8E7E7;
+  --st-red-fg: #A32020;
+  --st-amber: #A8620A;
+  --st-amber-bg: #FAF0E3;
+  --st-amber-fg: #A8620A;
+  --st-green: #226638;
+  --st-green-bg: #EAF3ED;
+  --st-green-fg: #226638;
+  --st-grey: #8A8782;
+  --st-grey-bg: #EFEEEC;
+  --st-grey-fg: #54524F;
+  /* Blå bevares — Stitch har ingen blå status, men vi bruger den til
+   * "Administrator"-pillen. Justeret til Stitchs neutrale palet. */
+  --st-blue: #2A47A8;
+  --st-blue-bg: #E7ECF7;
+  --st-blue-fg: #2A47A8;
+
+  /* Form — radius Stitch-stram: 2 · 4 · 8 · 12 (mod v2's 6 · 10 · 14 · 20).
+   * Del af hvorfor Stitchs skærme ser mere som et arbejdsredskab ud. */
+  --r-1: 2px;
+  --r-2: 4px;
+  --r-3: 8px;
+  --r-4: 12px;
+  --r-pill: 999px;
+  --sh-1: 0 1px 2px rgb(28 27 26 / 0.05);
+  --sh-2: 0 12px 32px -8px rgb(28 27 26 / 0.14);
+
+  /* Bevægelse — bevares uændret */
+  --e-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --e-spring: cubic-bezier(0.34, 1.4, 0.5, 1);
+  --d-1: 120ms;
+  --d-2: 220ms;
+  --d-3: 380ms;
+}
+
+/* Rum: 4 · 8 · 12 · 16 · 24 px — Stitchs skala (dokumenteret,
+ * ikke tokeniseret; Tailwind-utilities dækker skalaen 1:1). */

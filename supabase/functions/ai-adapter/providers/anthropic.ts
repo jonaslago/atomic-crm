@@ -21,6 +21,7 @@ export function createAnthropicProvider(apiKey: string): AIProvider {
           system: req.systemPrompt,
           messages: [{ role: "user", content: req.userInput }],
         }),
+        signal: req.signal,
       });
 
       if (!res.ok) {

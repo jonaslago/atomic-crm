@@ -27,6 +27,7 @@ export const LoginPage = (props: { redirectTo?: string }) => {
   const { redirectTo } = props;
   const [loading, setLoading] = useState(false);
   const hasDisplayedRecoveryNotification = useRef(false);
+  const hasDisplayedAuthErrorNotification = useRef(false);
   const location = useLocation();
   const navigate = useNavigate();
   const login = useLogin();
@@ -50,6 +51,49 @@ export const LoginPage = (props: { redirectTo?: string }) => {
     });
 
     searchParams.delete("passwordRecoveryEmailSent");
+    const nextSearch = searchParams.toString();
+    navigate(
+      {
+        pathname: location.pathname,
+        search: nextSearch ? `?${nextSearch}` : "",
+      },
+      { replace: true },
+    );
+  }, [location.pathname, location.search, navigate, notify]);
+
+  // LAGO Brief 42-korrektur (16. sep 2026): auth-callback-interceptor'en
+  // sender Supabase-fejl (typisk udløbet recovery-link) videre til
+  // #/login?error=…&error_description=…. Uden dette useEffect kastede
+  // login-siden bare de params væk — brugeren så en tom login-skærm og
+  // prøvede det samme link igen. Vi oversætter de kendte fejlkoder til
+  // dansk-brugbar tekst, ellers falder vi tilbage til det rå
+  // error_description så en ukendt fejl ikke også bliver stille.
+  useEffect(() => {
+    const searchParams = new URLSearchParams(location.search);
+    const errorCode =
+      searchParams.get("error_code") || searchParams.get("error");
+    const errorDescription = searchParams.get("error_description");
+    if (!errorCode && !errorDescription) return;
+    if (hasDisplayedAuthErrorNotification.current) return;
+    hasDisplayedAuthErrorNotification.current = true;
+
+    const humanMessages: Record<string, string> = {
+      otp_expired:
+        "Linket er brugt eller udløbet. Bed om et nyt adgangskode-link.",
+      access_denied:
+        "Linket er brugt eller udløbet. Bed om et nyt adgangskode-link.",
+    };
+    const message =
+      (errorCode && humanMessages[errorCode]) ||
+      (errorDescription
+        ? errorDescription.replace(/\+/g, " ")
+        : "Der opstod en fejl under login. Prøv igen.");
+
+    notify(message, { type: "error", multiLine: true });
+
+    searchParams.delete("error");
+    searchParams.delete("error_code");
+    searchParams.delete("error_description");
     const nextSearch = searchParams.toString();
     navigate(
       {

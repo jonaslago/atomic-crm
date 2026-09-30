@@ -11,39 +11,69 @@ import type { RoleLayout } from "./widgetTypes";
  * /indstillinger, ikke i dashboardet).
  */
 export const ROLE_LAYOUTS: RoleLayout = {
-  // Brief 34 §1: sælgerens fire spørgsmål. min_uge + min_status slået
-  // sammen visuelt til min_uge_status. Rækkefølge:
-  //   1. Hvem skal jeg besøge i dag       (min_dag, wide)
-  //   2. Hvem er jeg bagud med            (traenger, narrow)
-  //   3. Hvad lovede jeg sidst            (mine_opgaver, narrow)
-  //   4. Hvordan ligger jeg denne uge     (min_uge_status, wide)
-  saelger: ["min_dag", "traenger", "mine_opgaver", "min_uge_status"],
-
-  // Kontor-sættet (brief 34: samme titel+underlinje-behandling).
-  // Brief 46 §3 (16. sep 2026): forslag_rettelser ligger mellem
-  // datahuller og seneste_registreringer — samme flow, andet register:
-  // datahuller = "vi har intet", forslag = "sælger foreslår noget andet".
-  //
-  // Brief 83 (24. sep 2026): "ringelisten" fjernet — ringelisten hører
-  // under Kunder. Kontorets forside skal vise kontorets arbejde, og
-  // 112 overskredne kunder er ikke Simons. Widget'en og RPC'en er
-  // bevaret (bruges når rangering på værdi bygges).
-  kontor: [
-    "opfoelgninger_kontor",
-    "datahuller",
-    "forslag_rettelser",
-    "seneste_registreringer",
+  // Brief 34 §1 + brief 87 §4 (28. sep 2026): sælgerens fem sektioner.
+  // Rækkefølge i hovedspalte + skinne (DashboardGrid deler i to 8/4
+  // kolonner, mainIds = ids.slice(0, 3), railIds = ids.slice(3)):
+  //   Hovedspalte
+  //     1. Dagens besøg                     (min_dag, wide)
+  //     2. Kunder der skal besøges          (traenger, narrow)
+  //     3. Salg og ordrer                   (salg_og_ordrer, wide) ← ny
+  //   Skinne
+  //     4. Åbne opgaver                     (mine_opgaver, narrow)
+  //     5. Dagens tal                       (min_uge_status, wide)
+  saelger: [
+    "min_dag",
+    "traenger",
+    "salg_og_ordrer",
+    "mine_opgaver",
+    "min_uge_status",
   ],
 
-  // Ledelses-sæt. Brief 76 §1 (22. sep 2026): Ole får tre widgets, ikke
-  // ét. Rækkefølgen betyder noget — tal, så bevis, så gæld:
-  //   1. ledelsens_tal          hans tal pr. sælger (kickoff-krav)
-  //   2. seneste_registreringer beviset for at systemet er i brug
-  //   3. datahuller             kvaliteten af hans eget kartotek
-  // Bevidst udelukket: ringelisten + forslag_rettelser. Det er
-  // arbejdslister, og Ole skal ikke arbejde i systemet — han skal
-  // kunne se, om det virker.
-  ledelse: ["ledelsens_tal", "seneste_registreringer", "datahuller"],
+  // Kontor-sættet (brief 90 §6, 28. sep 2026):
+  //   0. taellerraekke        Fire arbejdsbunker øverst (link + tal)
+  //   1. ordrekommentarer     Sælgernes beskeder (brief 89)
+  //   2. kan_sendes           Ordrer klar til afsendelse
+  //   3. opfoelgninger_kontor Åbne opgaver — sælgeren-egne + kontor-kø
+  //   4. datahuller           Kunder med manglende data
+  //   5. seneste_registreringer Feed fra feltet
+  //
+  // "forslag_rettelser" er droppet fra kontor i brief 90 § — den hører
+  // hjemme på indstillinger-siden, ikke på forsiden (Jonas 28. sep).
+  // Ringelisten (brief 83) er stadig ude. DashboardGrid bruger to-
+  // beholder-model også for kontor: 4 widgets i hovedspalten, 1 i
+  // skinnen. Det løser brief 82 §1's 600 px ingenting-problem.
+  kontor: [
+    "taellerraekke",
+    "ordrekommentarer",
+    "kan_sendes",
+    "opfoelgninger_kontor",
+    "seneste_registreringer",
+    "datahuller",
+  ],
+
+  // Ledelses-sæt. Brief 86 (28. sep 2026): Ole skal se besøgs-
+  // dækningen først, salgsudvikling, bevægelse, kapacitet og til sidst
+  // datakvalitet i bunden. Ledelsens_tal (Sælgernes uge) er UDE — den
+  // er sælger-gruppens dagligt tal, og Ole skal ikke sammenligne fem
+  // sælgeres ugetal på forsiden hver morgen. Han skal kunne se om
+  // kartoteket dækkes, om salget vokser, hvilke kunder der er i
+  // bevægelse, om kapaciteten passer, og hvad der er registreret.
+  // Widget-nøgle omdøbt fra "daekningsgraden" → "besoegsdaekning" 28.
+  // sep — "dækningsgrad" betyder dækningsbidrag i regnskabssprog.
+  // Brief 90 §5 (28. sep 2026): mine_opgaver hører i hver eneste
+  // rolles layout — også Oles. Ligger sidst så det ikke forstyrrer
+  // ledelses-tallene; Ole opretter typisk ingen opgaver, så widget'en
+  // står tom mest af tiden. Princippet: enhver, der kan modtage noget,
+  // skal kunne lukke det.
+  ledelse: [
+    "besoegsdaekning",
+    "salgsudvikling",
+    "bevaegelse",
+    "kapacitets_tjek",
+    "seneste_registreringer",
+    "datakvalitet",
+    "mine_opgaver",
+  ],
 
   // Admin: kontor-widgets + ledelsens_tal (brief 44-eftersyn ·
   // 16. sep 2026). Admin (Jonas) har ikke kunde-ansvar via
@@ -60,11 +90,16 @@ export const ROLE_LAYOUTS: RoleLayout = {
   // Brief 83 (24. sep 2026): "ringelisten" fjernet også her — samme
   // beslutning som for kontor. Ringelisten er nu tilgængelig som
   // "Ringeliste"-radio i kundelistens venstre-skinne.
+  // Brief 90 §6 (28. sep 2026): admin har kontorets rækkefølge + sine
+  // egne administrative widgets nederst (ledelsens_tal + mine_opgaver).
+  // Forslag_rettelser er ude fra forsiden — hører på indstillinger.
   admin: [
+    "taellerraekke",
+    "ordrekommentarer",
+    "kan_sendes",
     "opfoelgninger_kontor",
-    "datahuller",
-    "forslag_rettelser",
     "seneste_registreringer",
+    "datahuller",
     "ledelsens_tal",
     "mine_opgaver",
   ],

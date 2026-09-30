@@ -483,10 +483,11 @@ function AabneOrdrerIndstik({
   // målestokken er hvor ofte sælgeren slipper for at folde ud.
   const iAltFmt = totals ? kroner.format(totals.iAlt) : "";
   const afventerFmt = totals ? kroner.format(totals.afventer) : "";
+  const ordreWord = orders.length === 1 ? "ordre" : "ordrer";
   const summary =
     totals && totals.afventer > 0
-      ? `${orders.length} ordrer · ${iAltFmt} · ${afventerFmt} afventer`
-      : `${orders.length} ordrer · ${iAltFmt} · alt klar`;
+      ? `${orders.length} ${ordreWord} · ${iAltFmt} · ${afventerFmt} afventer`
+      : `${orders.length} ${ordreWord} · ${iAltFmt} · alt klar`;
   const primaryRestNote = orders.find((o) => o.restNote)?.restNote;
   return (
     <div className="rounded-[var(--r-2)] bg-[var(--surface-1)] p-3">

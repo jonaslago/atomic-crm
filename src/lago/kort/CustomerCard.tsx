@@ -1,7 +1,7 @@
 import { MapPin, Navigation, Phone, User } from "lucide-react";
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { useGetIdentity, useTranslate } from "ra-core";
+import { useTranslate } from "ra-core";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -10,6 +10,7 @@ import { cn } from "@/lib/utils";
 
 import { Icon } from "@/lago/ui/Icon";
 import { useIsLagoAdmin } from "@/lago/auth/useIsLagoAdmin";
+import { useViewSalesId } from "@/lago/portefolje/PortefoljeContext";
 import type { VisitStatus } from "@/lago/customers/priority";
 import { useOpenOrders } from "@/lago/customers/show/useOpenOrders";
 import { RowActionsMenu } from "@/lago/dashboard/RowActionsMenu";
@@ -98,14 +99,17 @@ export function CustomerCard({
   const segment = customer.extension?.segment;
   const distrikt = customer.extension?.distrikt;
   const sellers = useSellerLookup();
-  const { data: identity } = useGetIdentity();
   const { isAdmin } = useIsLagoAdmin();
-  const mySalesId = typeof identity?.id === "number" ? identity.id : null;
-  // Samme rolle-gate som PlanVisitButton: sælger må planlægge på egne
-  // kunder, admin på tværs. Bruges til at gemme Planlæg bag ⋯ og
-  // afgøre om ⋯-menuen overhovedet skal renderes.
+  const viewSalesId = useViewSalesId();
+  // Brief 85 tillæg (28. sep 2026): gaten spørger på VIEW-porteføljen,
+  // ikke actor'en. Under dækning skal Camillas dækker kunne planlægge
+  // på Camillas kunder — det er dét dækning findes for. Uden dækning:
+  // view === actor, og gaten opfører sig som før. Skrivepunkterne
+  // (PlanVisitDialog / PlanleagForm) bruger allerede useViewSalesId,
+  // så det planlagte besøg tilfalder Camilla — ikke den, der planlægger.
   const canPlan =
-    isAdmin || (mySalesId != null && customer.sales_id === mySalesId);
+    isAdmin ||
+    (viewSalesId != null && customer.sales_id === viewSalesId);
   const salesName =
     sellers.byCode(customer.extension?.visma_sales_code) ??
     customer.extension?.visma_sales_name ??

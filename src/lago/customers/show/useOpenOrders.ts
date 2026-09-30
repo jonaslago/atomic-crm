@@ -65,6 +65,11 @@ export interface OpenOrderSummary {
   ordre_dato: string;
   total: number;
   status: "klar" | "restordre" | "reservation";
+  /** §11 (29. sep 2026): true når alle synlige linjer har Levering=1
+   *  (MAV — venter på andre varer). Ordren er klar på lager, men afventer
+   *  fragtvolumen. Badgen viser stadig "Klar til levering"; MAV-markøren
+   *  ved siden af forklarer hvorfor den ikke er på forsidens "Kan sendes". */
+  isMav: boolean;
   /** Antal linjer der afventer i denne ordre (rest > 0). */
   restLineCount: number;
   /** Brief 75 tillæg G (22. sep 2026): sum af antal på reservations-
@@ -88,24 +93,38 @@ export interface OpenOrderSummary {
 }
 
 /**
- * Brief 75 tillæg C · rev. brief 78 tillæg A §1 · rev. tillæg H (22. sep 2026):
- * linje-baserede totaler målt på reservation (VISMAs "I rest").
+ * Brief 75 tillæg C · rev. brief 78 tillæg A §1 · rev. tillæg H (22. sep
+ * 2026) · rev. brief 90 §4-opfølgning (29. sep 2026) · rev. samme dag
+ * med MAV-bucket:
  *
- * - klar:          reserveret ≥ antal (kan sendes nu)
- * - afventer:      reserveret < antal, UNDTAGET En Primeur og reservation
- * - enPrimeur:     status=21 OG reserveret < antal (aftalte 1-2 år)
- * - paaReservation: levering=5 (kundens instruks: varer står klar til træk)
- * - iAlt:          SUMMEN AF ALT — klar + afventer + enPrimeur + paaReservation.
- *                  Skal stemme med de linjer der står under. (Tillæg H
- *                  rettede den forkerte antagelse fra tillæg C/G om at
- *                  enPrimeur/reservation stod "uden for" — en total på 0
- *                  med 15.870 kr. lige under er en åbenlys fejl.)
- *                  UI viser klar/afventer først, så luft, så
- *                  paaReservation/enPrimeur — "efter en luft, samme
- *                  total, anden slags forpligtelse".
+ * ORDRE-baserede totaler. Man sender en ordre, ikke en linje — kontorets
+ * Kan sendes-widget bruger samme definition, og de to skal stemme.
+ *
+ * - klar:            hele ordren klar · Levering = 0. Kan sendes nu
+ * - venterPaaAndre:  hele ordren klar · Levering = 1 (MAV). Klar på
+ *                    lager, men afventer selskab — sælgeren skal kunne
+ *                    se hvilke ordrer der venter på andre varer, når
+ *                    han står i butikken
+ * - afventer:        resten af beløbet på ordrer der ikke er hele klar
+ *                    (og ikke er reservation eller En Primeur)
+ * - enPrimeur:       hele ordrens linjer er status=21 og ordren ikke
+ *                    er hele klar (aftalte 1-2 år)
+ * - paaReservation:  alle linjer er levering=5 (kundens instruks: varer
+ *                    står klar til træk)
+ * - iAlt:            summen af alle synlige linjer.
+ *
+ * Blandede ordrer (MAV-linjer sammen med ikke-MAV-linjer) findes ikke
+ * i praksis — målt 0 af 354 åbne ordrer i Aabne-ordrelinier_2026-09-22.
+ * Beregningen behøver derfor ikke håndtere det tilfælde.
+ *
+ * Historisk (før 29. sep 2026) blev totalerne målt på linje-niveau,
+ * hvilket gav en tredje definition af "klar" der ikke matchede badgen
+ * pr. ordre eller kontorets widget. Brief 90 §4 fastholdt hele-ordre-
+ * definitionen som den rigtige overalt.
  */
 export interface OpenOrdersTotals {
   klar: number;
+  venterPaaAndre: number;
   afventer: number;
   enPrimeur: number;
   paaReservation: number;
@@ -124,8 +143,11 @@ interface RawRow {
   antal: number | null;
   rest: number | null;
   reserveret_mod_lager: number | null;
+  reserveret_effective: number | null;
   ej_faktureret: number | null;
   lagerstatus: string | null;
+  lagerstatus_effective: string | null;
+  er_par_komponent: boolean | null;
   status: string | null;
   levering: string | null;
   salgstype: string | null;
@@ -163,67 +185,11 @@ function beloebLabel(
   return null;
 }
 
-/**
- * Brief 78 §1 (22. sep 2026): par-detektion for salgsvare + komponent.
- *
- * VISMA modellerer nogle varer (fx Vista Alegre Juleport) som to
- * linjer: en salgsvare (produktnr=91801-Jul, undtages=1, belob>0) og
- * en komponent (produktnr=91801, undtages=0, belob=0, reserveret>0).
- * De er én bestilling, ikke to.
- *
- * Reglen: match to linjer på samme ordre, samme antal, én med
- * undtages=1 og belob>0, én med undtages=0 og belob=0 og reserveret>0,
- * som deler produktnr-prefix (før første `-`). Salgsvaren vises;
- * komponentens reserveret_mod_lager overføres.
- *
- * Match kun HELT entydige par (præcis én kandidat i hver retning).
- * Findes flere kandidater, lad linjerne stå alene — det er bedre at
- * vise begge sandheder end at gætte forkert.
- *
- * Returnerer et Set med linje_nr for komponent-linjer der skal skjules,
- * og et Map fra salgsvare-linje_nr til reserveret-værdi der skal
- * overføres.
- */
-function detektPar(lines: RawRow[]): {
-  skjul: Set<string>;
-  overtagRes: Map<string, number>;
-} {
-  const skjul = new Set<string>();
-  const overtagRes = new Map<string, number>();
-  const salgsvarer = lines.filter(
-    (l) => l.undtages_lagerhaandtering === true && Number(l.ej_faktureret) > 0,
-  );
-  const komponenter = lines.filter(
-    (l) =>
-      l.undtages_lagerhaandtering === false &&
-      Number(l.ej_faktureret) === 0 &&
-      Number(l.reserveret_mod_lager) > 0,
-  );
-  const basePart = (p: string | null) => (p ?? "").split("-")[0];
-  for (const s of salgsvarer) {
-    const sPrefix = basePart(s.produktnr);
-    const sAntal = Number(s.antal ?? 0);
-    if (!sPrefix || sAntal === 0) continue;
-    const kandidater = komponenter.filter(
-      (k) =>
-        basePart(k.produktnr) === sPrefix && Number(k.antal ?? 0) === sAntal,
-    );
-    if (kandidater.length !== 1) continue;
-    // Sikring: komponenten må ikke også være et match for en anden
-    // salgsvare, ellers er relationen tvetydig.
-    const komp = kandidater[0];
-    const kompMatchesElsewhere = salgsvarer.filter(
-      (x) =>
-        x !== s &&
-        basePart(x.produktnr) === basePart(komp.produktnr) &&
-        Number(x.antal ?? 0) === Number(komp.antal ?? 0),
-    );
-    if (kompMatchesElsewhere.length > 0) continue;
-    skjul.add(komp.linje_nr);
-    overtagRes.set(s.linje_nr, Number(komp.reserveret_mod_lager ?? 0));
-  }
-  return { skjul, overtagRes };
-}
+// §11 opfølgning (29. sep 2026): par-detektionen er flyttet til basen
+// (view open_orders_effective_lago). Denne fil læser fra viewet og bruger
+// reserveret_effective + lagerstatus_effective + er_par_komponent direkte.
+// Den historiske detektPar() er væk — én implementation af reglen, læst
+// af både kundekortet og forsidens Kan sendes-widget.
 
 export function useOpenOrders(vismaCustomerNo: string | null | undefined) {
   return useQuery({
@@ -232,10 +198,13 @@ export function useOpenOrders(vismaCustomerNo: string | null | undefined) {
     staleTime: 60_000,
     queryFn: async (): Promise<OpenOrdersData> => {
       const supabase = getSupabaseClient();
+      // §11 opfølgning (29. sep 2026): læs fra effective-view som bærer
+      // reserveret_effective + lagerstatus_effective + er_par_komponent.
+      // Ingen par-detektion mere i klienten; reglen ligger i basen.
       const { data, error } = await supabase
-        .from("open_orders_lago")
+        .from("open_orders_effective_lago")
         .select(
-          "ordre_nr, ordre_dato, linje_nr, antal, rest, reserveret_mod_lager, ej_faktureret, lagerstatus, status, levering, salgstype, kampagne, produktnr, oensket_leveringsdato, note, undtages_lagerhaandtering",
+          "ordre_nr, ordre_dato, linje_nr, antal, rest, reserveret_mod_lager, reserveret_effective, ej_faktureret, lagerstatus, lagerstatus_effective, er_par_komponent, status, levering, salgstype, kampagne, produktnr, oensket_leveringsdato, note, undtages_lagerhaandtering",
         )
         .eq("visma_customer_no", vismaCustomerNo as string)
         .order("ordre_dato", { ascending: false });
@@ -277,19 +246,16 @@ export function useOpenOrders(vismaCustomerNo: string | null | undefined) {
       }
 
       const out: OpenOrderSummary[] = [];
-      // Brief 78 §1: hold pardata pr. ordre så totals også bruger dem.
-      const skjulByOrdre = new Map<string, Set<string>>();
-      const overtagByOrdre = new Map<string, Map<string, number>>();
       // Brief 78 tillæg B §2 (22. sep 2026): Vej/Energi/emb-afg er
       // afgifter, ikke varer. De tælles i "I alt" men vises samlet
       // nederst — en vejafgift "afventer" ikke ankomst, den er en
       // post på regningen.
       const TILLAEG_PRODUKTNR = new Set(["Vej", "Energi", "emb-afg"]);
       for (const [ordre_nr, lines] of byOrdre) {
-        const { skjul, overtagRes } = detektPar(lines);
-        skjulByOrdre.set(ordre_nr, skjul);
-        overtagByOrdre.set(ordre_nr, overtagRes);
-        const synligeLines = lines.filter((l) => !skjul.has(l.linje_nr));
+        // §11 opfølgning (29. sep 2026): er_par_komponent kommer fra
+        // viewet — komponentens reservation er allerede overtaget af
+        // salgsvaren, så vi skjuler komponent-linjen fra visning.
+        const synligeLines = lines.filter((l) => !l.er_par_komponent);
 
         // Adskil varelinjer fra tillæg/afgifter.
         const vareLines = synligeLines.filter(
@@ -330,13 +296,10 @@ export function useOpenOrders(vismaCustomerNo: string | null | undefined) {
               "(uden produktnr)";
             const ejFakt = Number(l.ej_faktureret ?? 0);
             const antal = Number(l.antal ?? 0);
-            // Brief 78 §1: overtag reservation fra parret komponent
-            // hvis den findes; ellers linjens egen.
-            const overtag = overtagRes.get(l.linje_nr);
-            const reserveret =
-              overtag !== undefined
-                ? overtag
-                : Number(l.reserveret_mod_lager ?? 0);
+            // §11 opfølgning (29. sep 2026): reserveret_effective kommer
+            // fra viewet og har allerede overtaget komponentens reservation
+            // for parrede salgsvarer. Ingen klient-side overtag.
+            const reserveret = Number(l.reserveret_effective ?? 0);
             const rest = Math.max(0, antal - reserveret);
             // Brief 75 tillæg G: reservationer (levering=5) er varer,
             // kunden trækker efter behov — ikke noget hun venter på.
@@ -413,11 +376,18 @@ export function useOpenOrders(vismaCustomerNo: string | null | undefined) {
           (s, l) => s + l.antal,
           0,
         );
+        // §11 (29. sep 2026): MAV-markør pr. ordre. True når alle
+        // synlige linjer har Levering=1. Blandede ordrer findes ikke
+        // i praksis (målt 0 af 354).
+        const isMav =
+          synligeLines.length > 0 &&
+          synligeLines.every((l) => l.levering === "1");
         out.push({
           ordre_nr,
           ordre_dato: synligeLines[0]?.ordre_dato ?? lines[0].ordre_dato,
           total,
           status: orderStatus,
+          isMav,
           restLineCount: restLines.length,
           reservationAntal,
           oensketLevering,
@@ -428,34 +398,66 @@ export function useOpenOrders(vismaCustomerNo: string | null | undefined) {
       }
       out.sort((a, b) => (a.ordre_dato < b.ordre_dato ? 1 : -1));
 
-      // Brief 75 tillæg C · rev. tillæg G · brief 78 tillæg A §1:
-      // totaler måles på reservation (VISMAs "I rest" = 0 → klar).
-      // Reservationer (levering=5) holdes uden for iAlt/klar/afventer
-      // og får deres egen bucket. En Primeur der stadig venter tælles
-      // også separat. Komponent-linjer skjult i par tælles ikke.
+      // Brief 90 §4 opfølgning (29. sep 2026): totaler måles på ORDRE-
+      // niveau, ikke linje-niveau. Man sender en ordre, ikke en linje;
+      // en linje på hylden i en restordre-ordre er reserveret, ikke
+      // afsendelsesklar.
+      //
+      // Definition — samme som kontorets Kan sendes-widget og som brief
+      // 90 §4 fastholder overalt:
+      //   Klar til levering:  ordrer hvor ALLE synlige linjer har
+      //                       reserveret >= antal (klar på lager) og
+      //                       intet er faerdigmeldt endnu
+      //   Afventer ankomst:   resten af beløbet på ordrer der ikke er
+      //                       hele klar (og ikke er reservation/EP)
+      //   På reservation:     ordrer hvor alle synlige linjer er
+      //                       levering=5 (kundens træk-mod-lager)
+      //   En Primeur:         ordrer hvor alle synlige linjer er
+      //                       status=21 (aftalte 1-2 år) og ikke klar
+      //
+      // Ordrer med blandet reservation + normale linjer havner i
+      // afventer (hele ordre-beløbet), fordi ordren ikke kan sendes
+      // som helhed. Blandede ordrer er meget sjældne — hvis de bliver
+      // et problem, splitter vi definitionen op i et senere brief.
       let klarRaw = 0;
+      let venterPaaAndreRaw = 0;
       let afventerRaw = 0;
       let enPrimeurRaw = 0;
       let paaReservationRaw = 0;
-      for (const [ordre_nr, lines] of byOrdre) {
-        const skjul = skjulByOrdre.get(ordre_nr) ?? new Set<string>();
-        const overtagRes = overtagByOrdre.get(ordre_nr) ?? new Map();
-        for (const r of lines) {
-          if (skjul.has(r.linje_nr)) continue;
-          const belob = Number(r.ej_faktureret ?? 0);
-          const antal = Number(r.antal ?? 0);
-          const overtag = overtagRes.get(r.linje_nr);
-          const reserveret =
-            overtag !== undefined
-              ? overtag
-              : Number(r.reserveret_mod_lager ?? 0);
-          const erReservation = r.levering === "5";
-          const isEnPrimeur = r.status === "21";
-          const isKlar = reserveret >= antal;
-          if (erReservation) paaReservationRaw += belob;
-          else if (isEnPrimeur && !isKlar) enPrimeurRaw += belob;
-          else if (isKlar) klarRaw += belob;
-          else afventerRaw += belob;
+      for (const [, lines] of byOrdre) {
+        // §11 opfølgning (29. sep 2026): par-komponent-linjer skjules
+        // via viewets er_par_komponent-flag. Reservationen er allerede
+        // overtaget af salgsvaren.
+        const synligeLines = lines.filter((l) => !l.er_par_komponent);
+        if (synligeLines.length === 0) continue;
+        const ordreBelob = synligeLines.reduce(
+          (s, l) => s + Number(l.ej_faktureret ?? 0),
+          0,
+        );
+        const alleErReservation = synligeLines.every(
+          (l) => l.levering === "5",
+        );
+        const alleErEnPrimeur = synligeLines.every((l) => l.status === "21");
+        // Brief 90 §4-opfølgning: MAV = Levering=1. Ordre er MAV hvis
+        // ALLE linjer har levering=1. Blandede ordrer findes ikke
+        // (målt 0 af 354), så beregningen behøver ikke tackle dem.
+        const alleErMav = synligeLines.every((l) => l.levering === "1");
+        // §11 opfølgning (29. sep 2026): reserveret_effective bærer par-
+        // detektionens overtagelse. Ordren er hele-klar når alle synlige
+        // linjer har lagerstatus_effective = 'klar'.
+        const alleKlar = synligeLines.every(
+          (l) => l.lagerstatus_effective === "klar",
+        );
+        if (alleErReservation) {
+          paaReservationRaw += ordreBelob;
+        } else if (alleErEnPrimeur && !alleKlar) {
+          enPrimeurRaw += ordreBelob;
+        } else if (alleErMav && alleKlar) {
+          venterPaaAndreRaw += ordreBelob;
+        } else if (alleKlar) {
+          klarRaw += ordreBelob;
+        } else {
+          afventerRaw += ordreBelob;
         }
       }
       // Brief 75 tillæg H (22. sep 2026): iAlt indeholder ALT. Afventer
@@ -464,16 +466,29 @@ export function useOpenOrders(vismaCustomerNo: string | null | undefined) {
       // først; afventer er restforskellen. Det er samme princip som
       // tillæg C's opfølgning (302.791 + 397.086 = 699.877, ikke 699.876).
       const klar = Math.round(klarRaw);
+      const venterPaaAndre = Math.round(venterPaaAndreRaw);
       const enPrimeur = Math.round(enPrimeurRaw);
       const paaReservation = Math.round(paaReservationRaw);
       const iAlt = Math.round(
-        klarRaw + afventerRaw + enPrimeurRaw + paaReservationRaw,
+        klarRaw +
+          venterPaaAndreRaw +
+          afventerRaw +
+          enPrimeurRaw +
+          paaReservationRaw,
       );
-      const afventer = iAlt - klar - enPrimeur - paaReservation;
+      const afventer =
+        iAlt - klar - venterPaaAndre - enPrimeur - paaReservation;
 
       return {
         orders: out,
-        totals: { klar, afventer, enPrimeur, paaReservation, iAlt },
+        totals: {
+          klar,
+          venterPaaAndre,
+          afventer,
+          enPrimeur,
+          paaReservation,
+          iAlt,
+        },
       };
     },
   });

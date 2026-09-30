@@ -1,11 +1,19 @@
 @import "tailwindcss";
 @import "tw-animate-css";
-@import "@fontsource-variable/inter";
+/* Brief 33 §5: Inter hentes lokalt via @fontsource/inter (woff2, font-
+   display: swap). Kun 400/500/700 — ingen andre og ingen kursiv.
+   Appen bruges i bil på mobil; en skrifttype fra CDN giver en blank
+   tekst indtil den er der. */
+@import "@fontsource/inter/400.css";
+@import "@fontsource/inter/500.css";
+@import "@fontsource/inter/700.css";
+@import "./lago/theme/tokens.css";
+@import "./lago/theme/bridge.css";
 
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
-  --font-sans: "Inter Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: var(--f-ui);
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
@@ -183,6 +191,3 @@ input[type="time"] {
   }
 }
 
-body {
-  font-family: "Inter Variable", ui-sans-serif, system-ui, sans-serif;
-}

@@ -1,0 +1,246 @@
+/* LAGO CRM · designsystem v2 — bridge
+ *
+ * Remapper Shadcn/Tailwind-variabler til LAGO-tokens ét sted. Så arver
+ * hele appen looket uden at nogen fil i src/components/atomic-crm/**,
+ * src/components/admin/** eller src/components/ui/** ændres.
+ *
+ * BEVIDST ULAGET (ikke i @layer). I Tailwind v4 slår ulaget CSS altid
+ * laget utility-CSS i kaskaden — det er dét der lader os rette
+ * core-komponenternes mål uden at røre deres filer.
+ *
+ * :root:root — specificity 0,0,2 vs upstream :root 0,0,1. Nødvendigt
+ * fordi @import-rækkefølgen tvinger bridge før upstream-:root-blokken
+ * i src/index.css (upstream ville ellers vinde ved sidste-erklæring).
+ * Rører ingen upstream-fil.
+ */
+
+:root:root {
+  /* --- Farver: neutral flade ------------------------------------- */
+  --background: var(--canvas);
+  --foreground: var(--fg);
+  --card: var(--surface);
+  --card-foreground: var(--fg);
+  --popover: var(--surface);
+  --popover-foreground: var(--fg);
+
+  /* --- Farver: blæk = eftertryk (én primær CTA pr. skærm) --------
+   * Brief 33 (16. sep 2026): turkis-accenten er ude af systemet.
+   * --a og --a-deep peger nu også på --ink, så komponenter der før
+   * brugte accent-farven arver samme sorte primærværdi. */
+  --primary: var(--ink);
+  --primary-foreground: #ffffff;
+
+  /* --- Farver: sekundær / muted ---------------------------------- */
+  --secondary: var(--surface-2);
+  --secondary-foreground: var(--fg);
+  --muted: var(--surface-2);
+  --muted-foreground: var(--fg-3);
+
+  /* --- Farver: accent = interaktion ------------------------------ */
+  --accent: var(--a-tint);
+  --accent-foreground: var(--a-deep);
+
+  /* --- Farver: status / feedback --------------------------------- */
+  --destructive: var(--st-red);
+
+  /* --- Kanter / input / fokus ------------------------------------ */
+  --border: var(--line);
+  --input: var(--line-strong);
+  --ring: var(--a);
+
+  /* --- Form ------------------------------------------------------ */
+  --radius: 10px; /* peger på --r-2 (Shadcn-radius arves) */
+
+  /* --- Sidebar --------------------------------------------------- */
+  --sidebar: var(--surface);
+  --sidebar-foreground: var(--fg);
+  --sidebar-primary: var(--ink);
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: var(--a-tint);
+  --sidebar-accent-foreground: var(--a-deep);
+  --sidebar-border: var(--line);
+  --sidebar-ring: var(--a);
+
+  /* --- Charts (Recharts / KPI-grafer) ---------------------------
+   * Brief 33: efter turkis er ude, arver chart-1/2/4 alle sort/neutralt
+   * fra --a-familien. Grafer der bruger disse tokens vil blive
+   * ensfarvede indtil dashboardet genopbygges i næste runde med en
+   * dedikeret chart-palet. Status-farver (rød/gul/grøn) reserveres
+   * stadig til pills — grafer skal ikke dobbeltbetyde. */
+  --chart-1: var(--a);          /* var teal — nu sort */
+  --chart-2: var(--a-deep);     /* var mørk teal — nu sort */
+  --chart-3: var(--fg-2);       /* mørk neutral — kontekst */
+  --chart-4: var(--a-soft);     /* var soft teal — nu --fg-3 */
+  --chart-5: var(--line-strong);/* neutral kant — reference/baseline */
+
+  /* --- Avatars (initial-cirkler for kontakter/sælgere) ----------
+   * 10 soft baggrundstoner, alle >90% L så mørk tekst på 700-vægt
+   * er læsbar (4,5:1+). 0-4 arver status-bg'erne + accent-tint;
+   * 5-9 udvider paletten med tokens/hex i samme lysstyrke. */
+  --avatar-0: #E7EEEE;            /* soft cool (var --a-tint teal) */
+  --avatar-1: var(--st-red-bg);   /* soft rosa */
+  --avatar-2: var(--st-amber-bg); /* soft varm gul */
+  --avatar-3: var(--st-green-bg); /* soft grøn */
+  --avatar-4: var(--st-blue-bg);  /* soft blå */
+  --avatar-5: var(--surface-2);   /* neutral */
+  --avatar-6: #f1f0fe;            /* soft violet */
+  --avatar-7: #fdeef2;            /* soft pink */
+  --avatar-8: #fff0e4;            /* soft peach */
+  --avatar-9: #e7efee;            /* soft cool grey */
+}
+
+/* --- Skrift: global ---------------------------------------------- */
+body {
+  font-family: var(--f-ui);
+  font-size-adjust: from-font; /* samme optiske størrelse på tværs af fallbacks */
+  font-variant-numeric: tabular-nums; /* beløb og tællere står i lige kolonner */
+}
+
+/* Safety-net mod vandret side-scroll. Beskytter brugeren mod at
+ * kunne swipe siden sidelæns på produktion — vigtigt fordi crm.lago.dk
+ * er det system, direktøren ser og felt-testen kører på, ikke et
+ * testmiljø. Auditten er ikke narret: den måler
+ * documentElement.scrollWidth som IKKE reagerer på overflow-clipping,
+ * så synderen står stadig i rapporten hver gang. Beskyttelse + sandhed,
+ * begge på én gang.
+ *
+ * Brief 38 §3b (16. sep 2026): `overflow-x: hidden` på html/body gør
+ * body til sin egen scroll-container på iOS Safari, hvilket bryder
+ * `position: sticky` for alle descendants — kundekortets action-bar
+ * scrollede væk sammen med resten i stedet for at klæbe. `overflow-x:
+ * clip` (Safari 16+) beskærer på samme måde uden at skabe scroll-
+ * container. Sticky virker igen; anti-side-scroll bevares. */
+html,
+body {
+  overflow-x: clip;
+}
+
+/* Kode-blokke må ombryde. Uden dette kan et enkelt langt token
+ * (fx et fuldt kolonnenavn eller sql-fragment) skubbe hele siden
+ * bredere end viewport — auditten fangede dette som en 288 px kode-blok
+ * i et 375 px vindue. break-word bevarer læsbarhed på laptop; på mobil
+ * ombrydes tokenet mellem tegn. */
+code {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+/* Brief 42 §2 (16. sep 2026): native input[type="date"] på iOS Safari
+ * har en intrinsic width beregnet fra shadow-DOM'ens dato-format-tekst
+ * (dd/mm/åååå + kalender-ikon), og den override'r class-baseret
+ * min-w-0 på grid-børn. Konsekvens: date-feltet stak ud af sin
+ * grid-kolonne ved 375 px trods min-w-0 på wrapper + w-full på input.
+ * `-webkit-min-logical-width: 0` er den iOS-specifikke pendant der
+ * neutraliserer intrinsic-width'en. `max-width: 100%` fastholder at
+ * inputtet aldrig kan vokse ud over sin parent. Rammer også
+ * datetime-local/time/month for symmetri. */
+input[type="date"],
+input[type="time"],
+input[type="datetime-local"],
+input[type="month"],
+input[type="week"] {
+  min-width: 0;
+  max-width: 100%;
+  -webkit-min-logical-width: 0;
+}
+
+/* --- Ikon-mål inde i Shadcn-knapper ------------------------------
+ * Core Shadcn button hardkoder size-4 (16 px) på svg. Vi hæver til
+ * det systemiske gulv uden at røre core-filen. */
+[data-slot="button"] > svg {
+  width: var(--ic);
+  height: var(--ic);
+}
+
+/* --- Trykmål: alle interaktive elementer 44 px høj på touch --------
+ * Shadcn giver forskellige komponenter forskellige slots — button,
+ * select-trigger, tabs-trigger, toggle, combobox. Én smal
+ * [data-slot="button"]-regel dækker kun første. Bred selector rammer
+ * alle mønstre i én omgang; scopet til touch (<1200 px) så laptop
+ * bevarer tætte tabelrækker og density-optimerede toolbars.
+ *
+ * 44 px betyder noget på en finger, ikke på en mus — samme antagelse
+ * som auditten selv bruger (TOUCH = window.innerWidth < 1200). */
+@media (max-width: 1199px) {
+  button,
+  [role="tab"],
+  [role="combobox"],
+  [data-slot="button"],
+  [data-slot="select-trigger"],
+  [data-slot="tabs-trigger"],
+  [data-slot="toggle"] {
+    min-height: var(--tap);
+  }
+
+  /* Icon-only-knapper (Shadcn size="icon" → size-9 = 36×36 px):
+   * kvadratisk 44×44 så min-height ikke skaber højere-end-bred. */
+  [data-slot="button"].size-9 {
+    min-width: var(--tap);
+  }
+
+  /* Header-links (logo, nav-tabs) er <a> uden data-slot — Atomic
+   * hardkoder h-6 på logoet, hvilket kollapser trykmålet til 24-30 px.
+   * Løft alle <a> i <header> til 44 px så tapping virker på finger.
+   * inline-flex + items-center bevarer det visuelle udseende. */
+  header a[href] {
+    display: inline-flex;
+    align-items: center;
+    min-height: var(--tap);
+  }
+}
+
+/* --- Afkrydsning: 24 px boks ---------------------------------------
+ * Core Shadcn checkbox er 16 px. Løftes til 24 px via bridge (44 px
+ * tap-wrapper er komponent-ansvar; se spec afsnit 2.3). */
+[data-slot="checkbox"] {
+  width: 24px;
+  height: 24px;
+}
+
+/* Native <input type=checkbox|radio> — Shadcn-reglen ovenfor rammer
+ * kun [data-slot="checkbox"]. Kortets filterpanel (og andre native
+ * felter) rammes af denne. Brief 20 pkt 1: målt 13 × 13 px før. */
+input[type="checkbox"],
+input[type="radio"] {
+  width: 24px;
+  height: 24px;
+  accent-color: var(--a);
+}
+
+/* --- MapLibre zoom-controls skjules på touch ----------------------
+ * Zoom-knapperne er 29 px og kan ikke rammes trygt med tommelfingeren.
+ * Pinch-zoom er den naturlige gestus på touch, så vi skjuler dem under
+ * 1200 px i stedet for at gøre dem større (ville spise kortplads).
+ * På laptop (mus) bevares de. Attribution beholdes altid — juridisk
+ * krav, og 14 px er passende for en kildeangivelse. */
+@media (max-width: 1199px) {
+  .maplibregl-ctrl-top-right .maplibregl-ctrl-group,
+  .maplibregl-ctrl-bottom-right .maplibregl-ctrl-group {
+    display: none;
+  }
+}
+
+/* --- Formular-felter: 44 px trykmål på inputs/select/textarea ------
+ * Dækker skærme renderet af Atomic-kernen (login, Sales, m.m.) —
+ * ellers står de tilbage med Shadcn's h-9 (36 px), som er under
+ * WCAG-gulvet. Checkbox/radio er ekskluderet: deres tap-wrapper er
+ * en <label> på 44 px, som specificeret i design/afsnit 2.3. */
+[data-slot="input"],
+input:not([type="checkbox"]):not([type="radio"]),
+select,
+textarea {
+  min-height: var(--tap);
+}
+
+/* --- Vægte: font-semibold → bold, alle button-tekster bold ---------
+ * Helvetica Neue har ingen ægte 600 — semibold syntetiseres og ser
+ * grødet ud. Klassen findes stadig i upstream-komponenter (login,
+ * dialog-titler m.m.), så vi remapper den i stedet for at søge-og-
+ * erstatte. Buttons går ligeledes til 700 så knap-tekst er læsbar i
+ * felten. */
+.font-semibold {
+  font-weight: 700;
+}
+[data-slot="button"] {
+  font-weight: 700;
+}

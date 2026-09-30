@@ -12,6 +12,15 @@ CREATE TABLE IF NOT EXISTS public.llm_calls (
     latency_ms        integer,
     cost_estimate_dkk numeric(10, 4),
     user_id           uuid REFERENCES auth.users (id) ON DELETE SET NULL,
+    -- Brief 21 (AI-3): kontekst-felter så et forslag altid kan spores
+    -- til hvem der bad om det og hvilken kunde det handlede om.
+    -- company_id + sales_id er nullable fordi tidlige kald (smoke-test,
+    -- hello.v1) ikke har en kunde-kontekst — vi vil ikke afvise dem.
+    company_id        bigint REFERENCES public.companies (id) ON DELETE SET NULL,
+    sales_id          bigint REFERENCES public.sales (id) ON DELETE SET NULL,
+    -- Brief 21: udfald — "svar", "timeout", "fejl", "ugyldigt_svar".
+    -- Log også de kald der fejler (projektprincip 2 · audit-trail).
+    outcome           text,
     created_at        timestamptz NOT NULL DEFAULT now()
 );
 
@@ -20,6 +29,10 @@ CREATE INDEX IF NOT EXISTS llm_calls_created_at_idx
 
 CREATE INDEX IF NOT EXISTS llm_calls_user_id_idx
     ON public.llm_calls (user_id);
+
+CREATE INDEX IF NOT EXISTS llm_calls_company_id_idx
+    ON public.llm_calls (company_id)
+    WHERE company_id IS NOT NULL;
 
 ALTER TABLE public.llm_calls ENABLE ROW LEVEL SECURITY;
 

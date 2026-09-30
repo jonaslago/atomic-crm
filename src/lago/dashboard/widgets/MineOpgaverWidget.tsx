@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { ClockArrowDown, Plus, Send } from "lucide-react";
 import { useGetIdentity } from "ra-core";
 import { Link } from "react-router-dom";
 import { toast } from "sonner";
@@ -8,10 +9,20 @@ import { Button } from "@/components/ui/button";
 
 import { getSupabaseClient } from "@/components/atomic-crm/providers/supabase/supabase";
 import { useConfigurationContext } from "@/components/atomic-crm/root/ConfigurationContext";
+import { useActorSalesId } from "@/lago/portefolje/useActorSalesId";
+import { useAuthUserId } from "@/lago/portefolje/useAuthUserId";
+import { usePortefolje, useViewSalesId } from "@/lago/portefolje/PortefoljeContext";
+import { RegistrerModal } from "@/lago/registrer/RegistrerModal";
+import { Icon } from "@/lago/ui/Icon";
+import { IconButton } from "@/lago/ui/IconButton";
+import { Panel } from "@/lago/ui/Panel";
+import { RowGroup } from "@/lago/ui/RowGroup";
 import { readErrorMessage } from "@/lago/ui/errorMessage";
 
 import { RowActionsMenu } from "../RowActionsMenu";
 import { WidgetShell } from "../WidgetShell";
+import { NyOpgaveKundePicker } from "./NyOpgaveKundePicker";
+import { SendVidereDialog } from "./SendVidereDialog";
 import { UdskudTaskDialog } from "./UdskudTaskDialog";
 
 /**
@@ -44,22 +55,73 @@ interface TaskRow {
   type: string | null;
   due_date: string | null;
   contact_id: number | null;
+  /** Brief 85 §10 (28. sep 2026): kundens id + navn, hentet via
+   *  contacts.company_id → companies.name. Alle opgaver har en
+   *  kontakt og dermed en kunde — det er ikke en datamangel, det
+   *  var en visningsfejl. Navnet står nu på rækken så sælgeren kan
+   *  prioritere. */
+  company_id: number | null;
+  company_name: string | null;
+}
+
+type TaskRowFromApi = {
+  id: number;
+  text: string | null;
+  type: string | null;
+  due_date: string | null;
+  contact_id: number | null;
+  contacts:
+    | { company_id: number | null; companies: { id: number; name: string } | null }
+    | Array<{
+        company_id: number | null;
+        companies: { id: number; name: string } | null;
+      }>
+    | null;
+};
+
+function mapTaskRow(r: TaskRowFromApi): TaskRow {
+  // PostgREST kan returnere embed'en som array selv for one-to-one
+  // relationer. Håndtér begge former for stabilitet.
+  const contact = Array.isArray(r.contacts) ? r.contacts[0] : r.contacts;
+  const company = contact?.companies ?? null;
+  const companyObj = Array.isArray(company) ? company[0] : company;
+  return {
+    id: r.id,
+    text: r.text,
+    type: r.type,
+    due_date: r.due_date,
+    contact_id: r.contact_id,
+    company_id: companyObj?.id ?? contact?.company_id ?? null,
+    company_name: companyObj?.name ?? null,
+  };
 }
 
 async function fetchMineOpgaver(salesId: number): Promise<TaskRow[]> {
   const supabase = getSupabaseClient();
+  // §14 (29. sep 2026): rullende horisont — due < i dag + 8 (7 dage frem
+  // inkl. i dag), IKKE ISO-uge. Widget'et er en arbejdskø uden periode-
+  // vælger og må ikke tømmes af kalenderen. En midtuge-tirsdag skulle
+  // ellers vise 4 opgaver, en fredag 2, en søndag 0 — samme mennesker,
+  // samme arbejde, forskellig visning. Overskredne (due_date < i dag)
+  // inkluderes altid; det er en værdi der aldrig må afhænge af et vindue.
+  //
+  // Aktivitetssiden beholder ISO-ugen fordi den har en periodevælger.
+  // Kravet fra §12 var én implementation af ugen (periodRange.ts), ikke
+  // ét vindue til alle skærme. Dette var en misfortolkning af mig.
   const cutoff = new Date();
   cutoff.setHours(0, 0, 0, 0);
-  cutoff.setDate(cutoff.getDate() + 8); // 7 dage frem
+  cutoff.setDate(cutoff.getDate() + 8);
   const { data, error } = await supabase
     .from("tasks")
-    .select("id, text, type, due_date, contact_id")
+    .select(
+      "id, text, type, due_date, contact_id, contacts(company_id, companies(id, name))",
+    )
     .eq("sales_id", salesId)
     .is("done_date", null)
     .lt("due_date", cutoff.toISOString())
     .order("due_date", { ascending: true });
   if (error) throw error;
-  return (data as TaskRow[]) ?? [];
+  return ((data as TaskRowFromApi[]) ?? []).map(mapTaskRow);
 }
 
 /**
@@ -75,14 +137,16 @@ async function fetchSendtVidere(salesFullName: string): Promise<TaskRow[]> {
   const marker = `${HANDOFF_MARKER}%${salesFullName}`;
   const { data, error } = await supabase
     .from("tasks")
-    .select("id, text, type, due_date, contact_id")
+    .select(
+      "id, text, type, due_date, contact_id, contacts(company_id, companies(id, name))",
+    )
     .is("sales_id", null)
     .is("done_date", null)
     .ilike("text", `%${marker}%`)
     .order("id", { ascending: false })
     .limit(5);
   if (error) throw error;
-  return (data as TaskRow[]) ?? [];
+  return ((data as TaskRowFromApi[]) ?? []).map(mapTaskRow);
 }
 
 function formatHandoffMarker(fullName: string): string {
@@ -121,9 +185,21 @@ function dueBadge(dueIso: string | null): {
 
 export function MineOpgaverWidget() {
   const { data: identity } = useGetIdentity();
-  const salesId = typeof identity?.id === "number" ? identity.id : null;
-  const fullName =
+  const { viewLabel, isCovering } = usePortefolje();
+  // Brief 84 §1 (28. sep 2026): to identiteter i spil.
+  //   salesId (view)     = hvis opgaver læser vi (Camilla under dækning).
+  //   actorSalesId + authUserId (actor) = hvem klarer opgaven (Simon).
+  // completed_by_sales_id og event_af peger ALTID på actor.
+  const salesId = useViewSalesId();
+  const actorSalesId = useActorSalesId();
+  const authUserId = useAuthUserId();
+  const actorFullName =
     typeof identity?.fullName === "string" ? identity.fullName.trim() : null;
+  // fullName bruges dels til "Sendt videre"-query (skal matche navnet i
+  // marker-teksten, dvs. dækket person under dækning), dels til at
+  // skrive nye handoff-markere (skal være actor — det er ham der
+  // handoff'er nu).
+  const fullName = isCovering ? viewLabel : actorFullName;
   const qc = useQueryClient();
 
   const query = useQuery({
@@ -150,11 +226,32 @@ export function MineOpgaverWidget() {
   const markDone = useMutation({
     mutationFn: async (taskId: number) => {
       const supabase = getSupabaseClient();
+      // Brief 84 §3 (28. sep 2026): completed_by_sales_id = actor
+      // (Simon), også når han passer for Camilla. sales_id (tildelt)
+      // røres ikke — opgaven bliver stående som Camillas.
       const { error } = await supabase
         .from("tasks")
-        .update({ done_date: new Date().toISOString() })
+        .update({
+          done_date: new Date().toISOString(),
+          completed_by_sales_id: actorSalesId,
+        })
         .eq("id", taskId);
       if (error) throw error;
+      // Brief 84 tillæg A §2: log-event til task_events_lago. Non-fatal
+      // hvis det fejler — opgaven er lukket i basen uanset. event_af er
+      // auth.uid() (uuid); RLS'en kræver at det matcher kalderens session.
+      if (authUserId) {
+        const { error: eventErr } = await supabase
+          .from("task_events_lago")
+          .insert({
+            task_id: taskId,
+            event_type: "klaret",
+            event_af: authUserId,
+          });
+        if (eventErr) {
+          console.error("Kunne ikke logge klaret-event:", eventErr);
+        }
+      }
       return { taskId };
     },
     onSuccess: (result) => {
@@ -165,15 +262,33 @@ export function MineOpgaverWidget() {
           onClick: () => {
             void (async () => {
               const supabase = getSupabaseClient();
+              // Fortryd nulstiller også completed_by_sales_id, så
+              // "hvem klarede den"-feltet ikke lyver efter en angerknap.
               const { error } = await supabase
                 .from("tasks")
-                .update({ done_date: null })
+                .update({ done_date: null, completed_by_sales_id: null })
                 .eq("id", result.taskId);
               if (error) {
                 toast.error("Kunne ikke fortryde", {
                   description: readErrorMessage(error),
                 });
                 return;
+              }
+              // Brief 84 opfølgning C (28. sep 2026): skriv genaabnet-
+              // event så loggen kan læses forfra uden at modsige
+              // tilstanden. "Klaret 14:35 · genaabnet 14:35:03" — sandt
+              // og fuldt. Non-fatal hvis eventen ikke lander.
+              if (authUserId) {
+                const { error: eventErr } = await supabase
+                  .from("task_events_lago")
+                  .insert({
+                    task_id: result.taskId,
+                    event_type: "genaabnet",
+                    event_af: authUserId,
+                  });
+                if (eventErr) {
+                  console.error("Kunne ikke logge genaabnet-event:", eventErr);
+                }
               }
               qc.invalidateQueries({
                 queryKey: ["lago-mine-opgaver", salesId],
@@ -199,10 +314,13 @@ export function MineOpgaverWidget() {
   // "en opgave, der forsvinder, er ikke delegeret. Den er tabt".
   const handoff = useMutation({
     mutationFn: async (task: TaskRow) => {
-      if (!fullName) throw new Error("Mangler brugerens navn");
+      // Handoff-markeren skriver ALTID actor-navnet: det er den, der
+      // sender opgaven videre nu. Selvom Simon passer Camilla, er
+      // handoff'en Simons handling.
+      if (!actorFullName) throw new Error("Mangler brugerens navn");
       const supabase = getSupabaseClient();
       const currentText = task.text ?? "";
-      const marker = formatHandoffMarker(fullName);
+      const marker = formatHandoffMarker(actorFullName);
       const newText = currentText + marker;
       const { error } = await supabase
         .from("tasks")
@@ -235,17 +353,43 @@ export function MineOpgaverWidget() {
   const totalCount = query.data?.length ?? 0;
   const clipped = (query.data ?? []).slice(0, CLIP_TO);
 
+  // Brief 85 §5 (28. sep 2026): ét tal, ikke to. Er der overskredne,
+  // er dét tallet der betyder noget — det åbne totalt-tal er sekundært
+  // og lå ved siden i rødt uden at føje information til det haster-tal.
+  // Tonen følger indholdet: rød når der er overskredne, ellers neutral.
   const countLabel =
     overdueCount > 0
-      ? `${overdueCount} overskredet · ${totalCount} åbne`
+      ? `${overdueCount} overskredet`
       : totalCount > 0
         ? `${totalCount} åbne`
         : "Ingen åbne";
 
+  // Brief 85 §16 (28. sep 2026): "Ny opgave" i widgetens header.
+  // Klik åbner en kunde-vælger; når kunden er valgt, åbnes Registrér-
+  // modalen på opgave-fanen for den kunde. To-trins-flow, ét ophav —
+  // ingen konkurrerende task-formularer i koden.
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [taskForCompany, setTaskForCompany] = useState<{
+    id: number;
+    name: string;
+  } | null>(null);
+  const nyOpgaveButton = salesId != null ? (
+    <button
+      type="button"
+      onClick={() => setPickerOpen(true)}
+      className="text-[var(--fg-2)] inline-flex items-center gap-0.5 text-[13px] font-medium no-underline hover:underline"
+    >
+      <Icon icon={Plus} size="sm" />
+      Ny opgave
+    </button>
+  ) : null;
+
   return (
     <WidgetShell
-      title="Hvad lovede jeg sidst"
-      subtitle="Åbne opfølgninger fra tidligere besøg"
+      title="Åbne opgaver"
+      subtitle="Udvalg af dine åbne opfølgninger"
+      seeAllHref="/aktiviteter"
+      headerExtra={nyOpgaveButton}
       isLoading={query.isPending && salesId != null}
       error={query.error as Error | null}
       isEmpty={totalCount === 0}
@@ -262,32 +406,57 @@ export function MineOpgaverWidget() {
           ? "Log ind for at se dine opgaver."
           : "Ingen åbne opfølgninger de næste 7 dage."
       }
+      noPanel
     >
-      <ul className="flex flex-col gap-3">
-        {clipped.map((t) => (
-          <li key={t.id}>
-            <TaskCard
-              task={t}
-              onMarkDone={() => markDone.mutate(t.id)}
-              onHandoff={fullName ? () => handoff.mutate(t) : null}
-              handoffPending={
-                handoff.isPending && handoff.variables?.id === t.id
-              }
-              pending={markDone.isPending && markDone.variables === t.id}
-              error={
-                markDone.isError && markDone.variables === t.id
-                  ? readErrorMessage(markDone.error)
-                  : null
-              }
-            />
-          </li>
-        ))}
-      </ul>
+      {/* Brief 85 §2 (28. sep 2026): ét Panel med RowGroup indeni. */}
+      <Panel>
+        <RowGroup>
+          {clipped.map((t) => (
+            <li key={t.id}>
+              <TaskCard
+                task={t}
+                onMarkDone={() => markDone.mutate(t.id)}
+                onHandoff={fullName ? () => handoff.mutate(t) : null}
+                handoffPending={
+                  handoff.isPending && handoff.variables?.id === t.id
+                }
+                pending={markDone.isPending && markDone.variables === t.id}
+                error={
+                  markDone.isError && markDone.variables === t.id
+                    ? readErrorMessage(markDone.error)
+                    : null
+                }
+                isCovering={isCovering}
+                coveredName={isCovering ? viewLabel : null}
+              />
+            </li>
+          ))}
+        </RowGroup>
+      </Panel>
       {/* Brief 76 §3: sendt-videre-sektionen. Kun synlig når der ér
           noget at vise — ellers spilder vi ikke plads på "Ingen sendt
           videre" (det er normaltilstanden). */}
       {(sendtVidereQuery.data?.length ?? 0) > 0 && (
         <SendtVidereSection tasks={sendtVidereQuery.data ?? []} />
+      )}
+      {/* Brief 85 §16: kunde-vælger + Registrér-modal på opgave-fanen.
+          Ligger som children af WidgetShell så de kan rende ved siden
+          af listen uden at forstyrre layoutet — begge er overlays. */}
+      <NyOpgaveKundePicker
+        open={pickerOpen}
+        onOpenChange={setPickerOpen}
+        onSelect={(c) => setTaskForCompany(c)}
+      />
+      {taskForCompany && (
+        <RegistrerModal
+          open={!!taskForCompany}
+          onOpenChange={(v) => {
+            if (!v) setTaskForCompany(null);
+          }}
+          companyId={taskForCompany.id}
+          companyName={taskForCompany.name}
+          initialTab="opgave"
+        />
       )}
     </WidgetShell>
   );
@@ -323,6 +492,16 @@ function SendtVidereRow({ task }: { task: TaskRow }) {
   const markerLine = markerIndex >= 0 ? raw.slice(markerIndex).trim() : null;
   return (
     <>
+      {/* Brief 85 §10 (28. sep 2026): kundenavnet på rækken — samme
+          princip som TaskCard ovenover. */}
+      {task.company_name && task.company_id && (
+        <Link
+          to={`/companies/${task.company_id}/show`}
+          className="block truncate text-[12px] font-bold text-[var(--fg-2)] no-underline hover:underline"
+        >
+          {task.company_name}
+        </Link>
+      )}
       <div className="line-clamp-2 text-[var(--fg)]">
         {originalText || "(uden tekst)"}
       </div>
@@ -330,14 +509,6 @@ function SendtVidereRow({ task }: { task: TaskRow }) {
         <div className="mt-0.5 text-[12px] text-[var(--fg-3)]">
           {markerLine.replace(/^—\s*/, "")}
         </div>
-      )}
-      {task.contact_id && (
-        <Link
-          to={`/contacts/${task.contact_id}/show`}
-          className="mt-1 inline-block text-[12px] font-medium text-[var(--fg-2)] no-underline hover:underline"
-        >
-          Åbn kunde →
-        </Link>
       )}
     </>
   );
@@ -350,6 +521,8 @@ function TaskCard({
   handoffPending,
   pending,
   error,
+  isCovering,
+  coveredName,
 }: {
   task: TaskRow;
   onMarkDone: () => void;
@@ -357,13 +530,24 @@ function TaskCard({
   handoffPending: boolean;
   pending: boolean;
   error: string | null;
+  isCovering: boolean;
+  coveredName: string | null;
 }) {
   const { taskTypes } = useConfigurationContext();
   const [confirming, setConfirming] = useState(false);
   const [udskudOpen, setUdskudOpen] = useState(false);
-  const typeLabel = task.type
-    ? (taskTypes.find((t) => t.value === task.type)?.label ?? task.type)
-    : null;
+  // Brief 87 §5-hastesag (28. sep 2026): Send videre kræver bekræftelse
+  // på alle bredder. Rulle-tilbagen af task 23 viste hvorfor —
+  // ikonknappen fyrede uden at spørge, sælgeren gjorde intet forkert.
+  // Friktion hører i handlingen, ikke i navigationen.
+  const [handoffOpen, setHandoffOpen] = useState(false);
+  // Brief 85 §9 (28. sep 2026): task.type = "none" er brugerens
+  // eksplicitte fravalg af type. En synlig chip "Ingen" er støj —
+  // etiket for "ikke-type" bidrager ikke. Skjul den.
+  const typeLabel =
+    task.type && task.type !== "none"
+      ? (taskTypes.find((t) => t.value === task.type)?.label ?? task.type)
+      : null;
   const label =
     task.text?.trim() ||
     (typeLabel ? `${typeLabel} uden tekst` : "Opgave uden tekst");
@@ -376,9 +560,21 @@ function TaskCard({
         : "text-[var(--fg-3)]";
 
   return (
-    <article className="flex flex-col gap-3 rounded-lg bg-[var(--surface-1)] p-4">
+    <article className="flex flex-col gap-3">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
+          {/* Brief 85 §10 (28. sep 2026): kundenavnet står øverst på
+              rækken. Uden det kunne sælgeren ikke se, hvem opgaven hørte
+              til, uden at åbne den. Klikbart link fører direkte til
+              kundekortet. */}
+          {task.company_name && task.company_id && (
+            <Link
+              to={`/companies/${task.company_id}/show`}
+              className="block truncate text-[13px] font-bold text-[var(--fg-2)] no-underline hover:underline"
+            >
+              {task.company_name}
+            </Link>
+          )}
           {/* Brief 43 (16. sep 2026): line-clamp-2 — lister klipper efter
               to linjer, detaljevisningen (kundekortet) viser alt. Rækken
               kan åbnes via kundenavnet / row-linket. */}
@@ -403,7 +599,9 @@ function TaskCard({
         <div className="text-[13px] text-[var(--st-red-fg)]">{error}</div>
       )}
       <div className="flex items-center gap-2">
-        {/* Primær: Markér som klaret. */}
+        {/* Brief 85 §3 (28. sep 2026): Markér som klaret (primær, 48px,
+            uden flex-1). Åbn kunde (kun når kontakt findes). Send
+            videre / Udskyd i ⋯. */}
         <Button
           onClick={() => {
             if (!confirming) {
@@ -414,7 +612,7 @@ function TaskCard({
             onMarkDone();
           }}
           disabled={pending}
-          className="min-h-11 flex-1 gap-1.5 bg-[var(--ink)] font-medium text-white hover:bg-[var(--ink)]/90"
+          className="min-h-12 gap-1.5 bg-[var(--ink)] font-medium text-white hover:bg-[var(--ink)]/90"
         >
           {pending
             ? "Markerer …"
@@ -431,31 +629,60 @@ function TaskCard({
             <Link to={`/contacts/${task.contact_id}/show`}>Åbn kunde</Link>
           </Button>
         )}
-        <RowActionsMenu
-          // Brief 76 tillæg A (23. sep 2026): Udskyd er koblet — åbner
-          // UdskudTaskDialog der flytter due_date + logger begrundelsen
-          // i task_events_lago (IKKE i tasks.text, som send-videre gør
-          // som kendt skrøbelighed).
-          // Brief 76 §3: Send videre til kontoret nulstiller sales_id
-          // og appender note på tasks.text; migreres til task_events_lago
-          // i en separat runde.
-          actions={[
-            {
-              label: "Udskyd med begrundelse",
-              onSelect: () => setUdskudOpen(true),
-            },
-            ...(onHandoff
-              ? [
-                  {
-                    label: handoffPending
-                      ? "Sender …"
-                      : "Send videre til kontoret",
-                    onSelect: onHandoff,
-                  },
-                ]
-              : []),
-          ]}
-        />
+        {/* Brief 87 §5 (28. sep 2026): på ≥1024 px (lg) står de to sidste
+            valg som ikonknapper — Udskyd (ClockArrowDown) og Send videre
+            (Send/papirflyver) — så pladsen bruges frem for at gemme dem
+            bag "…". Under lg beholdes menuen, iPhone og iPad har for lidt
+            plads til to knapper i træk. IconButton har 44 px trykmål og
+            påkrævet aria-label; Icon er eneste indgang til Lucide.
+            Brief 87 §5-hastesag (28. sep 2026 aften): Send videre åbner
+            nu bekræftelse på alle bredder — både ikon og menu. Task 23
+            (Ring til Paw / Rombo.dk) blev rullet tilbage manuelt fordi
+            ikonknappen fyrede uden at spørge. */}
+        <div className="hidden lg:flex items-center gap-2">
+          <IconButton
+            icon={ClockArrowDown}
+            aria-label="Udskyd med begrundelse"
+            title="Udskyd med begrundelse"
+            onClick={() => setUdskudOpen(true)}
+          />
+          {onHandoff && (
+            <IconButton
+              icon={Send}
+              aria-label="Send videre til kontoret"
+              title="Send videre til kontoret"
+              onClick={() => setHandoffOpen(true)}
+              disabled={handoffPending}
+            />
+          )}
+        </div>
+        <div className="lg:hidden">
+          <RowActionsMenu
+            // Brief 76 tillæg A (23. sep 2026): Udskyd er koblet — åbner
+            // UdskudTaskDialog der flytter due_date + logger begrundelsen
+            // i task_events_lago (IKKE i tasks.text, som send-videre gør
+            // som kendt skrøbelighed).
+            // Brief 76 §3: Send videre til kontoret nulstiller sales_id
+            // og appender note på tasks.text; migreres til task_events_lago
+            // i en separat runde.
+            // Brief 87 §5-hastesag: menu-varianten åbner også bekræftelses-
+            // dialog — samme regel som ikon-varianten, samme knapper.
+            actions={[
+              {
+                label: "Udskyd med begrundelse",
+                onSelect: () => setUdskudOpen(true),
+              },
+              ...(onHandoff
+                ? [
+                    {
+                      label: "Send videre til kontoret",
+                      onSelect: () => setHandoffOpen(true),
+                    },
+                  ]
+                : []),
+            ]}
+          />
+        </div>
       </div>
       <UdskudTaskDialog
         open={udskudOpen}
@@ -464,6 +691,21 @@ function TaskCard({
         taskLabel={label}
         currentDueDate={task.due_date}
       />
+      {onHandoff && (
+        <SendVidereDialog
+          open={handoffOpen}
+          onOpenChange={setHandoffOpen}
+          taskText={label}
+          companyName={task.company_name}
+          isCovering={isCovering}
+          coveredName={coveredName}
+          pending={handoffPending}
+          onConfirm={() => {
+            setHandoffOpen(false);
+            onHandoff();
+          }}
+        />
+      )}
     </article>
   );
 }

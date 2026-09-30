@@ -51,4 +51,20 @@ node_modules/
 /playwright/.auth/
 
 *.lock
- 
+backups/
+
+# LAGO ux-audit: gemt login-session og genereret rapport
+lago/ux-audit/.session.json
+lago/ux-audit/rapport.md
+
+# §15 (29. sep 2026): VISMA-eksporter må aldrig ind i repoet — de bærer
+# kundenavne og beløb, og repoet er offentligt. En .gitignore er ikke
+# beskyttelse nok (kan slås fra ved git add -f), men den fanger de fleste
+# uheld. Filerne uploades via <input type="file"> fra brugerens
+# ~/Downloads; ingen server-side pull.
+*.xlsx
+*.xls
+
+# Data exports with customer names, amounts, and account numbers.
+scripts/lago/data/*.csv
+scripts/lago/data/*.json

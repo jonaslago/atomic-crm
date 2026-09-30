@@ -35,10 +35,44 @@ const raSupabaseFrenchOverride = {
 const raSupabaseDanishOverride = {
   "ra-supabase": {
     auth: {
+      // Login-siden bruger denne key til linket under formularen.
+      // Brief 20 pkt 7: "Forgot password?" skal være dansk.
+      forgot_password: "Glemt adgangskode?",
       password_reset:
         "Tjek din mail for en besked om nulstilling af adgangskoden.",
       missing_tokens:
         "Manglende eller ugyldige tokens — anmod om en ny mail om nulstilling af adgangskode.",
+    },
+    reset_password: {
+      // Forgot-password-siden (StartPage sender hertil) bruger denne key.
+      forgot_password: "Glemt adgangskode?",
+      forgot_password_details:
+        "Indtast din e-mail nedenfor, og vi sender dig en besked med et link til at nulstille adgangskoden.",
+    },
+    set_password: {
+      new_password: "Vælg adgangskode",
+    },
+  },
+};
+
+// ra-language-danish is missing a handful of keys that ra-core / the
+// shadcn admin components query directly (sort button labels, pagination
+// footer). Overlay them here so LAGO surfaces are consistently Danish
+// without touching upstream files or forking the language pack.
+const raCoreDanishOverride = {
+  ra: {
+    sort: {
+      sort_by: "Sortér efter %{field_lower_first} %{order}",
+      ASC: "stigende",
+      DESC: "faldende",
+    },
+    navigation: {
+      page_rows_per_page: "Rækker pr. side:",
+    },
+    auth: {
+      // ra-language-danish oversætter ikke password-labelen; set-password-
+      // siden viser den engelsk (upstream fallback). Override her.
+      password: "Adgangskode",
     },
   },
 };
@@ -61,6 +95,7 @@ const frenchCatalog = mergeTranslations(
 const danishCatalog = mergeTranslations(
   englishCatalog,
   danishMessages,
+  raCoreDanishOverride,
   raSupabaseDanishOverride,
   danishCrmMessages,
   danishLagoMessages,

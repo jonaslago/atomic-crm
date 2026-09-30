@@ -1,7 +1,11 @@
 import type { ConfigurationContextValue } from "./ConfigurationContext";
 
-export const defaultDarkModeLogo = "./logos/logo_atomic_crm_dark.svg";
-export const defaultLightModeLogo = "./logos/logo_atomic_crm_light.svg";
+// LAGO-drueklasen (21. sep 2026). Erstattede atomic-crm's spiral saa
+// repoet ikke laenger peger paa en anden virksomheds maerke. Databasens
+// configuration-raekke overskriver stadig dette i drift — men hvis den
+// raekke forsvinder, faar vi nu LAGO-mærket, ikke atomic-crm's.
+export const defaultDarkModeLogo = "./logos/lago_drueklase.png";
+export const defaultLightModeLogo = "./logos/lago_drueklase.png";
 
 export const defaultCurrency = "USD";
 

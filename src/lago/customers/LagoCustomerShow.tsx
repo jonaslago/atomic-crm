@@ -140,6 +140,10 @@ function MobileHeader({ data }: { data: LagoCustomerData }) {
           zipcode={company.zipcode ?? null}
           city={company.city ?? null}
           phoneNumber={company.phone_number ?? null}
+          salesId={company.sales_id ?? null}
+          segment={extension?.segment ?? null}
+          currentPlannedIso={extension?.next_visit_planned ?? null}
+          currentNote={extension?.next_visit_note ?? null}
           hasSideRail={false}
         />
       </div>
@@ -207,8 +211,8 @@ function LaptopHeader({ data }: { data: LagoCustomerData }) {
           </div>
           <div className="shrink-0">
             {/* hasSideRail=false gør at Registrér-knappen kommer med i
-                CustomerActionBar — vi vil have alle tre knapper i
-                topbåndet på laptop. */}
+                CustomerActionBar — vi vil have alle knapper i topbåndet
+                på laptop (Naviger · Ring · Planlæg · Registrér). */}
             <CustomerActionBar
               companyId={company.id}
               companyName={company.name}
@@ -216,6 +220,10 @@ function LaptopHeader({ data }: { data: LagoCustomerData }) {
               zipcode={company.zipcode ?? null}
               city={company.city ?? null}
               phoneNumber={company.phone_number ?? null}
+              salesId={company.sales_id ?? null}
+              segment={extension?.segment ?? null}
+              currentPlannedIso={extension?.next_visit_planned ?? null}
+              currentNote={extension?.next_visit_note ?? null}
               hasSideRail={false}
             />
           </div>
@@ -255,7 +263,12 @@ function LandscapeZones({ data }: ZoneProps) {
             contacts={data.contacts}
             layout="laptop"
           />
-          <AabneOrdrerSection extension={data.extension} layout="laptop" />
+          <AabneOrdrerSection
+              extension={data.extension}
+              companyId={data.company.id}
+              companyName={data.company.name}
+              layout="laptop"
+            />
         </main>
         <aside className="flex flex-col">
           <OmsaetningSection extension={data.extension} layout="laptop" />

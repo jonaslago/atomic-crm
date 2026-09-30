@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Loader2, Plus } from "lucide-react";
 import { useGetIdentity, useTranslate } from "ra-core";
+import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -13,7 +14,9 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
-import { createCompanyNote } from "./dataAccess";
+import { Icon } from "@/lago/ui/Icon";
+import { readErrorMessage } from "@/lago/ui/errorMessage";
+import { createCompanyNote, deleteCompanyNote } from "./dataAccess";
 import type { ContactSummary } from "./types";
 
 // Sentinel value used by the contact selector to mean "no specific person".
@@ -26,6 +29,8 @@ interface QuickNoteFormProps {
   contacts: ContactSummary[];
   /** Invalidate key for the LAGO customer page query so the new note appears. */
   invalidateKey: ReadonlyArray<unknown>;
+  /** Brief 40 tillæg B (16. sep 2026): til toast-kvitteringen. */
+  companyName?: string;
 }
 
 /**
@@ -37,6 +42,7 @@ export function QuickNoteForm({
   companyId,
   contacts,
   invalidateKey,
+  companyName,
 }: QuickNoteFormProps) {
   const translate = useTranslate();
   const queryClient = useQueryClient();
@@ -46,11 +52,38 @@ export function QuickNoteForm({
 
   const mutation = useMutation({
     mutationFn: createCompanyNote,
-    onSuccess: () => {
+    onSuccess: (result) => {
       setText("");
       setContactId(NO_CONTACT);
       queryClient.invalidateQueries({ queryKey: invalidateKey });
+      // Brief 40 tillæg B: samme kvittering-mønster som QuickTaskForm.
+      // "Ligger i tidslinjen" er stedet noten kan efterprøves.
+      const where = companyName ? ` på ${companyName}` : "";
+      toast.success(`Notat gemt${where}`, {
+        description: "Ligger i tidslinjen",
+        action: {
+          label: "Fortryd",
+          onClick: () => {
+            void deleteCompanyNote(result.id).then(
+              () => {
+                queryClient.invalidateQueries({ queryKey: invalidateKey });
+                toast.success("Notatet er fortrudt");
+              },
+              (err) => {
+                toast.error("Kunne ikke fortryde notatet", {
+                  description: readErrorMessage(err),
+                });
+              },
+            );
+          },
+        },
+        duration: 5000,
+      });
     },
+    onError: (err) =>
+      toast.error("Kunne ikke gemme notatet", {
+        description: readErrorMessage(err),
+      }),
   });
 
   const submit = () => {
@@ -66,7 +99,7 @@ export function QuickNoteForm({
 
   return (
     <div className="mb-4 space-y-2">
-      <Label htmlFor="quick-note" className="text-xs">
+      <Label htmlFor="quick-note" className="text-sm">
         {translate("lago.customer.quick_note.label")}
       </Label>
       <textarea
@@ -80,7 +113,7 @@ export function QuickNoteForm({
       <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
         {contacts.length > 0 && (
           <div className="flex-1 space-y-1">
-            <Label htmlFor="quick-note-contact" className="text-xs">
+            <Label htmlFor="quick-note-contact" className="text-sm">
               {translate("lago.customer.quick_note.contact_label")}
             </Label>
             <Select value={contactId} onValueChange={setContactId}>
@@ -103,7 +136,7 @@ export function QuickNoteForm({
         )}
         <div className="flex items-center justify-end gap-2 sm:self-end">
           {mutation.isError && (
-            <span className="text-destructive text-xs">
+            <span className="text-destructive text-sm">
               {translate("lago.customer.quick_note.save_failed")}
             </span>
           )}
@@ -113,9 +146,9 @@ export function QuickNoteForm({
             disabled={!text.trim() || mutation.isPending}
           >
             {mutation.isPending ? (
-              <Loader2 className="mr-2 h-3 w-3 animate-spin" />
+              <Icon icon={Loader2} size="sm" className="mr-2 animate-spin" />
             ) : (
-              <Plus className="mr-1 h-3 w-3" />
+              <Icon icon={Plus} size="sm" className="mr-1" />
             )}
             {translate("lago.customer.quick_note.submit")}
           </Button>

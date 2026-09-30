@@ -8,6 +8,14 @@ export const danishCrmMessages: PartialCrmMessages = {
     companies: {
       name: "Virksomhed |||| Virksomheder",
       forcedCaseName: "Virksomhed",
+      // Brief 20 pkt 7: engelske felt-labels på danske skærme.
+      fields: {
+        address: "Adresse",
+        phone_number: "Telefon",
+        tax_identifier: "CVR-nr.",
+        sector: "Branche",
+        website: "Hjemmeside",
+      },
       empty: {
         description: "Din virksomhedsliste er tom.",
         title: "Ingen virksomheder fundet",
@@ -36,6 +44,21 @@ export const danishCrmMessages: PartialCrmMessages = {
     contacts: {
       name: "Kontakt |||| Kontakter",
       forcedCaseName: "Kontakt",
+      fields: {
+        first_name: "Fornavn",
+        last_name: "Efternavn",
+        last_seen: "Sidst set",
+        title: "Titel",
+        company_id: "Kunde",
+        email_jsonb: "E-mail",
+        email: "E-mail",
+        phone_jsonb: "Telefon",
+        phone_number: "Telefonnummer",
+        linkedin_url: "LinkedIn URL",
+        background: "Baggrund (bio, hvordan I mødtes m.m.)",
+        has_newsletter: "Modtager nyhedsbrev",
+        sales_id: "Ansvarlig",
+      },
       action: {
         add: "Tilføj kontakt",
         add_first: "Tilføj din første kontakt",
@@ -52,6 +75,8 @@ export const danishCrmMessages: PartialCrmMessages = {
         followed_by_you: "Fulgt af dig",
         status_none: "Ingen",
       },
+      position_at: "%{title} hos",
+      position_at_company: "%{title} hos %{company}",
       empty: {
         description: "Din kontaktliste er tom.",
         title: "Ingen kontakter fundet",
@@ -60,6 +85,9 @@ export const danishCrmMessages: PartialCrmMessages = {
         search: "Søg navn, virksomhed...",
         today: "I dag",
         this_week: "Denne uge",
+        before_this_week: "Før denne uge",
+        before_this_month: "Før denne måned",
+        before_last_month: "Før sidste måned",
         managed_by_me: "Mine kontakter",
         tags: "Tags",
         tasks: "Opgaver",
@@ -128,6 +156,18 @@ export const danishCrmMessages: PartialCrmMessages = {
       name: "Bruger |||| Brugere",
       action: {
         new: "Ny bruger",
+      },
+      // Brief 24: oprettelse sender ingen invitation. Toast'en må ikke
+      // love en mail brugeren aldrig får. Adgang gives eksplicit via
+      // "Send invitation"-knappen når testen skal starte.
+      create: {
+        success:
+          "Brugeren er oprettet uden invitationsmail. Send invitationen fra brugerens side, når adgang skal gives.",
+        error: "Der opstod en fejl ved oprettelse af brugeren.",
+      },
+      edit: {
+        success: "Bruger opdateret",
+        error: "Kunne ikke opdatere brugeren.",
       },
     },
     tasks: {

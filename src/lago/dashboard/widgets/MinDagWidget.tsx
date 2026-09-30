@@ -1,13 +1,16 @@
 import { useQuery } from "@tanstack/react-query";
-import { ArrowRight, StickyNote } from "lucide-react";
+import { CalendarClock, StickyNote } from "lucide-react";
 import { useState } from "react";
-import { useGetIdentity } from "ra-core";
 import { Link } from "react-router-dom";
 
 import { Button } from "@/components/ui/button";
 
 import { getSupabaseClient } from "@/components/atomic-crm/providers/supabase/supabase";
+import { useViewSalesId } from "@/lago/portefolje/PortefoljeContext";
 import { Icon } from "@/lago/ui/Icon";
+import { Inset } from "@/lago/ui/Inset";
+import { Panel } from "@/lago/ui/Panel";
+import { RowGroup } from "@/lago/ui/RowGroup";
 import { PlanVisitDialog } from "@/lago/registrer/PlanVisitDialog";
 import { RegistrerModal } from "@/lago/registrer/RegistrerModal";
 
@@ -51,14 +54,24 @@ interface TodaysRow {
   activityType?: string | null;
 }
 
+interface TomorrowRow {
+  company_id: number;
+  company_name: string;
+  city: string | null;
+  planned_iso: string;
+}
+
 interface MinDagData {
   rows: TodaysRow[];
   /** Brief 81 §5 (23. sep 2026): antal aktiviteter sælgeren har
-   *  markeret som gennemført i dag. Bruges kun til tom tilstand:
-   *  er der ingen planlagte tilbage OG N > 0, siger widget'en
-   *  "Dagens besøg er registreret · N i dag" i stedet for "planen
-   *  mangler". Samme filter som `plannedActivities` men done=true. */
+   *  markeret som gennemført i dag. Bruges til tom tilstand som
+   *  understøttende tekst under "Ikke flere besøg i dag". Samme
+   *  filter som `plannedActivities` men done=true. */
   doneToday: number;
+  /** Brief 85 tillæg #2 (28. sep 2026): en tom liste, der fortæller
+   *  hvornår den bliver fyldt, er ikke tom. Under dagens besøg står
+   *  hvad der venter i morgen — antal, byer, første tidspunkt. */
+  tomorrow: TomorrowRow[];
 }
 
 async function fetchTodaysVisits(mySalesId: number): Promise<MinDagData> {
@@ -67,12 +80,14 @@ async function fetchTodaysVisits(mySalesId: number): Promise<MinDagData> {
   start.setHours(0, 0, 0, 0);
   const end = new Date(start);
   end.setDate(end.getDate() + 1);
+  const dayAfter = new Date(end);
+  dayAfter.setDate(dayAfter.getDate() + 1);
   const yyyy = start.getFullYear();
   const mm = String(start.getMonth() + 1).padStart(2, "0");
   const dd = String(start.getDate()).padStart(2, "0");
   const todayIso = `${yyyy}-${mm}-${dd}`;
 
-  const [plannedVisits, plannedActivities, doneTodayCount] = await Promise.all([
+  const [plannedVisits, plannedActivities, doneTodayCount, tomorrowVisits] = await Promise.all([
     supabase
       .from("companies_lago")
       .select(
@@ -114,10 +129,26 @@ async function fetchTodaysVisits(mySalesId: number): Promise<MinDagData> {
       .eq("done", true)
       .is("deleted_at", null)
       .eq("sales_id", mySalesId),
+    // Brief 85 tillæg #2 (28. sep 2026): I morgen-blok — planlagte besøg
+    // i morgen så sælgeren kan se hvad der venter, også når dagen er tom.
+    // Kun besøg (ikke aktiviteter) — I morgen-blokken er en indikator,
+    // ikke en fuld liste. Detaljer ligger på /companies?sort=priority.
+    supabase
+      .from("companies_lago")
+      .select(
+        "company_id, next_visit_planned, companies!inner(id, name, city)",
+      )
+      .gte("next_visit_planned", end.toISOString())
+      .lt("next_visit_planned", dayAfter.toISOString())
+      .eq("next_visit_planned_by", mySalesId)
+      .eq("is_visible_to_sales", true)
+      .eq("is_active", true)
+      .order("next_visit_planned", { ascending: true }),
   ]);
   if (plannedVisits.error) throw plannedVisits.error;
   if (plannedActivities.error) throw plannedActivities.error;
   if (doneTodayCount.error) throw doneTodayCount.error;
+  if (tomorrowVisits.error) throw tomorrowVisits.error;
 
   const visitRows: TodaysRow[] = (
     (plannedVisits.data ?? []) as unknown as Array<{
@@ -170,9 +201,23 @@ async function fetchTodaysVisits(mySalesId: number): Promise<MinDagData> {
     };
   });
 
+  const tomorrow: TomorrowRow[] = (
+    (tomorrowVisits.data ?? []) as unknown as Array<{
+      company_id: number;
+      next_visit_planned: string;
+      companies: { id: number; name: string; city: string | null };
+    }>
+  ).map((r) => ({
+    company_id: r.company_id,
+    company_name: r.companies.name,
+    city: r.companies.city,
+    planned_iso: r.next_visit_planned,
+  }));
+
   return {
     rows: [...visitRows, ...activityRows],
     doneToday: doneTodayCount.count ?? 0,
+    tomorrow,
   };
 }
 
@@ -188,8 +233,7 @@ function formatTime(iso: string): string | null {
 }
 
 export function MinDagWidget() {
-  const { data: identity } = useGetIdentity();
-  const mySalesId = typeof identity?.id === "number" ? identity.id : null;
+  const mySalesId = useViewSalesId();
 
   const query = useQuery({
     queryKey: ["lago-dashboard-min-dag", mySalesId],
@@ -209,54 +253,130 @@ export function MinDagWidget() {
   });
 
   const count = sorted.length;
-  // Brief 81 §5 (23. sep 2026): to tomme tilstande, ikke én. Ingen
-  // planlagte OG ingen registreringer i dag = planen mangler (a).
-  // Ingen planlagte tilbage, men N registreret = dagen er kørt (b).
-  // Forskellen betyder det modsatte — (a) skubber til at planlægge,
-  // (b) roser og lukker dagen.
-  const dagenErKoert = count === 0 && doneToday > 0;
+  const tomorrow = query.data?.tomorrow ?? [];
+  // Brief 87 tillæg (28. sep 2026): "Se alle kommende besøg" pegede før
+  // på kundelisten (forkert destination) og på actor'ens portefølje
+  // (forkert scope). Aktivitetssiden fik en "kommende"-periode så vi
+  // kan pege der; person=viewSalesId sikrer at det er den kundeportefølje
+  // sælgeren er i (også under dækning).
+  const seeAllHref =
+    mySalesId != null
+      ? `/aktiviteter?types=aftale&period=kommende&person=${mySalesId}`
+      : `/aktiviteter?types=aftale&period=kommende`;
   return (
     <WidgetShell
-      title="Hvem skal jeg besøge i dag"
+      title="Dagens besøg"
       subtitle="Planlagte aftaler i tidsrækkefølge"
-      seeAllHref="/companies?sort=priority"
+      seeAllHref={seeAllHref}
+      seeAllLabel="Se alle kommende besøg"
       isLoading={query.isPending}
       error={query.error as Error | null}
-      isEmpty={sorted.length === 0}
       count={
         count > 0
           ? { label: `${count} planlagte aftaler`, tone: "neutral" }
           : undefined
       }
-      emptyState={
-        dagenErKoert ? (
-          <p>
-            Dagens besøg er registreret · {doneToday}{" "}
-            {doneToday === 1 ? "besøg" : "besøg"} i dag
-          </p>
-        ) : (
-          <div className="space-y-2">
-            <p>Der er ikke planlagt noget i dag.</p>
-            <Link
-              to="/companies?filter=%7B%22priority_status%22%3A%22overdue%22%7D"
-              className="text-[var(--fg-2)] inline-flex items-center gap-1 text-sm font-medium no-underline hover:underline"
-            >
-              Se hvem der trænger til besøg
-              <Icon icon={ArrowRight} size="sm" />
-            </Link>
-          </div>
-        )
-      }
+      noPanel
     >
-      {/* Tillæg A §6: ingen klipning her — en planlagt dag er endelig. */}
-      <ul className="flex flex-col gap-3">
-        {sorted.map((row) => (
-          <li key={row.company_id}>
-            <VisitRow row={row} />
-          </li>
-        ))}
-      </ul>
+      {/* Tillæg A §6: ingen klipning her — en planlagt dag er endelig.
+          Brief 85 §2 (28. sep 2026): ét Panel med RowGroup indeni.
+          Brief 85 tillæg #1 (28. sep 2026): tom-tilstand ligger nu
+          inde i widgetens body så "I morgen"-blokken kan stå under. */}
+      {count > 0 ? (
+        <Panel>
+          <RowGroup>
+            {sorted.map((row) => (
+              <li key={row.company_id}>
+                <VisitRow row={row} />
+              </li>
+            ))}
+          </RowGroup>
+        </Panel>
+      ) : (
+        <EmptyTodayBlock doneToday={doneToday} />
+      )}
+      <TomorrowBlock rows={tomorrow} />
     </WidgetShell>
+  );
+}
+
+// Brief 85 tillæg #1 (28. sep 2026): "Ikke flere besøg i dag" som
+// primær sætning, antal registreret som understøttende. Forskellen er
+// hvad sælgeren skal bruge: ikke "du er færdig", men "der kommer ikke
+// mere i dag". Antallet er hvor mange der ér registreret; nul-tallet
+// tages ikke med (ingen supporting-linje hvis intet er kørt endnu).
+function EmptyTodayBlock({ doneToday }: { doneToday: number }) {
+  return (
+    <div className="text-sm">
+      <p className="text-[var(--fg)] font-medium">Ikke flere besøg i dag.</p>
+      {doneToday > 0 && (
+        <p className="text-[var(--fg-2)] mt-1">
+          {doneToday} {doneToday === 1 ? "besøg registreret" : "besøg registreret"}{" "}
+          i dag.
+        </p>
+      )}
+    </div>
+  );
+}
+
+// Brief 85 tillæg #2 (28. sep 2026): "I morgen" står under dagens
+// besøg — også når dagen er tom. Kommer der noget i morgen: antal,
+// byer, første tidspunkt. Kommer der ikke noget: sig det, og tilbyd
+// at planlægge. Samme regel som "næste planmæssige forfald" — en tom
+// liste, der fortæller hvornår den bliver fyldt, er ikke tom.
+function TomorrowBlock({ rows }: { rows: TomorrowRow[] }) {
+  if (rows.length === 0) {
+    return (
+      <div className="mt-4 border-t border-[var(--line)] pt-3 text-sm">
+        <div className="flex items-baseline justify-between gap-3">
+          <p>
+            <span className="text-[var(--fg-2)] font-medium">I morgen · </span>
+            <span className="text-[var(--fg-3)]">Ingen planlagte besøg</span>
+          </p>
+          <Link
+            to="/companies?sort=priority"
+            className="text-[var(--fg-2)] inline-flex items-center gap-1 text-sm font-medium no-underline hover:underline"
+          >
+            <Icon icon={CalendarClock} size="sm" />
+            Planlæg besøg
+          </Link>
+        </div>
+      </div>
+    );
+  }
+  const cities = Array.from(
+    new Set(rows.map((r) => r.city).filter((c): c is string => !!c)),
+  );
+  const citiesLabel =
+    cities.length === 0
+      ? null
+      : cities.length === 1
+        ? cities[0]
+        : cities.length === 2
+          ? cities.join(" og ")
+          : `${cities.slice(0, -1).join(", ")} og ${cities[cities.length - 1]}`;
+  const firstTime = (() => {
+    const first = rows[0];
+    if (!first) return null;
+    const t = formatTime(first.planned_iso);
+    return t ? t.replace("Kl. ", "kl. ") : null;
+  })();
+  return (
+    <div className="mt-4 border-t border-[var(--line)] pt-3 text-sm">
+      <p>
+        <span className="text-[var(--fg-2)] font-medium">I morgen · </span>
+        <span className="text-[var(--fg)]">
+          {rows.length}{" "}
+          {rows.length === 1 ? "planlagt besøg" : "planlagte besøg"}
+        </span>
+        {citiesLabel && (
+          <span className="text-[var(--fg-2)]"> · {citiesLabel}</span>
+        )}
+        {firstTime && (
+          <span className="text-[var(--fg-2)]">. Første {firstTime}.</span>
+        )}
+      </p>
+    </div>
   );
 }
 
@@ -268,7 +388,7 @@ function VisitRow({ row }: { row: TodaysRow }) {
   const telHref = c.phone_number ? `tel:${c.phone_number}` : null;
 
   return (
-    <article className="flex flex-col gap-3 rounded-lg bg-[var(--surface-1)] p-4">
+    <article className="flex flex-col gap-3">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-baseline gap-x-2">
@@ -301,19 +421,20 @@ function VisitRow({ row }: { row: TodaysRow }) {
         )}
       </div>
       {row.next_visit_note && (
-        <div className="rounded-md bg-[var(--surface)] p-3 text-sm text-[var(--fg)]">
+        <Inset className="text-sm text-[var(--fg)]">
           <div className="mb-1 flex items-center gap-1 text-[12px] font-medium uppercase tracking-wide text-[var(--fg-3)]">
             <Icon icon={StickyNote} size="sm" />
             Aftale
           </div>
           <div>{row.next_visit_note}</div>
-        </div>
+        </Inset>
       )}
       <div className="flex items-center gap-2">
-        {/* Tillæg A §0: primær = fyldt --ink, får den plads der er tilovers. */}
+        {/* Brief 85 §3 (28. sep 2026): Registrér (primær, 48px trykmål,
+            uden flex-1). Ring (kun når telefon findes). Udskyd i ⋯. */}
         <Button
           onClick={() => setRegOpen(true)}
-          className="min-h-11 flex-1 gap-1.5 bg-[var(--ink)] font-medium text-white hover:bg-[var(--ink)]/90"
+          className="min-h-12 gap-1.5 bg-[var(--ink)] font-medium text-white hover:bg-[var(--ink)]/90"
         >
           Registrér
         </Button>

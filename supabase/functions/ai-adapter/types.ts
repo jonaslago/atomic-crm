@@ -21,6 +21,10 @@ export interface AIRequest {
   model: string;
   maxOutputTokens: number;
   temperature: number;
+  /** Brief 21: edge-side timeout — hvis signal aborter foer svaret er
+   *  faerdigt, kaster provider.call en AbortError som index.ts fanger
+   *  og logger som outcome="timeout". */
+  signal?: AbortSignal;
 }
 
 export interface AIResponse {

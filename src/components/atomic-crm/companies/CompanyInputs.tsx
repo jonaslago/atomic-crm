@@ -160,15 +160,20 @@ const CompanyAdditionalInformationInputs = () => {
           />
         </SimpleFormIterator>
       </ArrayInput>
-      <ReferenceInput
-        source="sales_id"
-        reference="sales"
-        filter={{
-          "disabled@neq": true,
-        }}
-      >
-        <SelectInput helperText={false} optionText={saleOptionRenderer} />
-      </ReferenceInput>
+      {/*
+        LAGO Brief 24: ejerskab styres i VISMA. sales_id på companies
+        er nu et *afledt* felt — sat af derive_sales_id_from_visma()
+        på hver kunde-import. Vælgeren er slået fra, så manuel
+        redigering ikke driver ejerskabet ud af sync med VISMA
+        (og dermed også ud af sync med companies_lago.visma_sales_code,
+        som fortsat er masterdata). Rediger sælger for en kunde:
+        gør det i VISMA.
+      */}
+      <div className="text-muted-foreground text-sm">
+        <span className="mb-1 block font-bold">Ansvarlig sælger</span>
+        Ejerskab styres i VISMA. Ret sælger-koden på kunden i VISMA;
+        importen skriver den her ved næste kørsel.
+      </div>
     </div>
   );
 };

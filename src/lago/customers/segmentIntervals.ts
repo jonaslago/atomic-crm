@@ -2,24 +2,30 @@
 // Jonas tunes the numbers here; everywhere else in the LAGO code reads
 // from this module via SEGMENT_INTERVAL_DAYS / SOON_RATIO.
 //
-// (When we later promote this to a DB-backed setting that Jonas can edit
-// in-app, the same constants will be the fall-back defaults.)
+// Brief 13 udvidede segmentet fra {A,B,C} til {A,B,C,X,L}:
+//   - A/B/C er stadig de reguleret besøgte segmenter
+//   - X = uklassificeret (default for importerede kunder)
+//   - L = lead
+// X og L har ikke egne intervaller — de behandles som "default"
+// (samme som B). Sælger klassificerer til A/B/C i CRM, hvorefter
+// intervallet træder i kraft.
 
-export type Segment = "A" | "B" | "C";
+export type Segment = "A" | "B" | "C" | "X" | "L";
 
 /**
- * Expected days between visits per segment.
+ * Expected days between visits per classificeret segment.
  * - A = high-touch wine/spirit retailers, every ~2 weeks
  * - B = mid-frequency, every ~4 weeks
  * - C = low-touch, every ~8 weeks
  */
-export const SEGMENT_INTERVAL_DAYS: Record<Segment, number> = {
+export const SEGMENT_INTERVAL_DAYS: Record<"A" | "B" | "C", number> = {
   A: 14,
   B: 28,
   C: 56,
 };
 
-/** Default interval used when a customer has no segment yet. */
+/** Default interval used when a customer has no segment yet, or is
+ *  marked as X (uklassificeret) or L (lead). */
 export const DEFAULT_INTERVAL_DAYS = SEGMENT_INTERVAL_DAYS.B;
 
 /**
@@ -35,5 +41,6 @@ export function intervalForSegment(
   if (segment === "A" || segment === "B" || segment === "C") {
     return SEGMENT_INTERVAL_DAYS[segment];
   }
+  // X (uklassificeret), L (lead), null: fall back to the default interval.
   return DEFAULT_INTERVAL_DAYS;
 }

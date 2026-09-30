@@ -69,14 +69,16 @@ const dateFmt = new Intl.DateTimeFormat("da-DK", {
 async function fetchRingeliste(): Promise<{
   rows: RingelistenRow[];
   total: number;
+  totalOverdue: number;
+  totalNeverVisited: number;
 }> {
   const supabase = getSupabaseClient();
   // Brief 57 (17. sep 2026): server-side RPC. Erstatter fetchCustomerList({})
   // — som hentede op til 5000 kunder + hele companies_lago-embed'en for at
   // køre overdue-beregningen client-side. Nu returnerer basen kun de op
-  // til 20 kandidater der matcher: status='overdue' AND next_visit_planned
-  // IS NULL AND daysOverdue >= 5. iPhone-netværk kunne ikke tåle 5000-
-  // række-payload'en; desktop kunne.
+  // til 20 kandidater der matcher.
+  // §18 (29. sep 2026): udvidet med never_visited i grundmængden og
+  // breakdown i payload — de to grupper kræver forskellige samtaler.
   const { data, error } = await supabase.rpc("dashboard_ringeliste_lago", {
     p_limit: RPC_LIMIT,
   });
@@ -84,10 +86,14 @@ async function fetchRingeliste(): Promise<{
   const payload = data as {
     rows: RingelistenRow[] | null;
     total: number;
+    total_overdue?: number;
+    total_never_visited?: number;
   } | null;
   return {
     rows: payload?.rows ?? [],
     total: payload?.total ?? 0,
+    totalOverdue: payload?.total_overdue ?? 0,
+    totalNeverVisited: payload?.total_never_visited ?? 0,
   };
 }
 
@@ -116,26 +122,34 @@ export function RingelistenWidget() {
   }, [query.data]);
 
   const totalCount = query.data?.total ?? 0;
+  const totalOverdue = query.data?.totalOverdue ?? 0;
+  const totalNeverVisited = query.data?.totalNeverVisited ?? 0;
   const clipped = rowsAll.slice(0, CLIP_TO);
   const hasMore = totalCount > clipped.length;
+
+  // §18 opfølgning (29. sep 2026): tælleren viser fordelingen så Simon
+  // kan se hvad han står med. To grupper, to samtaler.
+  const countLabel =
+    totalOverdue > 0 && totalNeverVisited > 0
+      ? `${totalCount} · ${totalOverdue} overskredet · ${totalNeverVisited} aldrig besøgt`
+      : totalCount > 0
+        ? `${totalCount} udestående`
+        : "Ingen udestående";
 
   return (
     <WidgetShell
       title="Ringeliste — udestående overskridelser"
-      subtitle="Kunder over frist uden kontakt fra sælger inden for fem hverdage"
+      subtitle="Mere end 14 dage over, eller aldrig besøgt, og uden en aktuel plan. Kontoret må ringe."
       isLoading={query.isPending}
       error={query.error as Error | null}
       errorMessage="Kunne ikke hente ringelisten. Prøv at genindlæse."
       isEmpty={totalCount === 0}
       count={
         totalCount > 0
-          ? {
-              label: `${totalCount} udestående`,
-              tone: "red",
-            }
-          : { label: "Ingen udestående", tone: "neutral" }
+          ? { label: countLabel, tone: "red" }
+          : { label: countLabel, tone: "neutral" }
       }
-      emptyState="Ingen overskredne uden plan (5+ dage over) lige nu — sælgerne holder trit."
+      emptyState="Ingen aldrig-besøgte eller overskredne uden plan (14+ dage over) lige nu — sælgerne holder trit."
     >
       {/* PC (≥1280 px): tabel med syv kolonner. */}
       <div className="hidden @[1280px]:block">
@@ -177,11 +191,11 @@ export function RingelistenWidget() {
       {hasMore && (
         <div className="mt-3 text-right">
           {/* Brief 74 §1 (22. sep 2026): tallet er fjernet fra label.
-              Ringelistens definition (overdue + fem hverdage uden kontakt)
-              er strammere end priority_status=overdue, som destinationen
+              Ringelistens definition (overdue + 14 dages ventetid) er
+              strammere end priority_status=overdue, som destinationen
               filtrerer på — så samme tal på begge sider var pr. definition
               en løgn. Vælg ærligheden frem for at tvinge definitionerne
-              sammen. */}
+              sammen. Brief 90 §1 (28. sep 2026): 5 dage → 14 dage. */}
           <Link
             to="/companies?filter=%7B%22priority_status%22%3A%22overdue%22%7D"
             className="text-[13px] font-medium text-[var(--fg-2)] no-underline hover:underline"

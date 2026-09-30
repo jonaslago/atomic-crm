@@ -177,3 +177,9 @@ verify_jwt = false
 # are allowed and logged with user_id=null. See lago/DIVERGENCE.md.
 [functions.ai-adapter]
 verify_jwt = false
+# LAGO: impersonate Edge Function (brief 27). verify_jwt=false because the
+# function itself verifies the caller's admin status against public.sales,
+# not just that the JWT is valid — a valid non-admin JWT must be rejected
+# with a clear message, not silently allowed by the gateway.
+[functions.impersonate]
+verify_jwt = false

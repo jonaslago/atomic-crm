@@ -16,12 +16,28 @@ import { Card, CardContent } from "@/components/ui/card";
 import type { CrmDataProvider } from "../providers/types";
 import type { Sale, SalesFormData } from "../types";
 import { SalesInputs } from "./SalesInputs";
+// LAGO Brief 42-korrektur (16. sep 2026): "Send adgangskode-link"
+// erstatter det tidligere "Send invitation"-flow. Brugere oprettes
+// direkte med email_confirm=true, så invitation-endepunktet fejler
+// mod dem — recovery-link er den ene sti der virker for både nye og
+// tilbagevendende brugere.
+import { SendPasswordLinkButton } from "@/lago/settings/SendPasswordLinkButton";
+// LAGO Brief 27: "Log ind som"-knap (admin-only) ved siden af Send
+// invitation. Bevidst placeret her — brief §6: "Ikke i en menu, hvor
+// den kan rammes ved et uheld."
+import { ImpersonateButton } from "@/lago/impersonation/ImpersonateButton";
 
 function EditToolbar() {
   return (
-    <div className="flex justify-end gap-4">
-      <CancelButton />
-      <SaveButton />
+    <div className="flex flex-wrap items-center justify-between gap-4">
+      <div className="flex flex-wrap gap-2">
+        <SendPasswordLinkButton />
+        <ImpersonateButton />
+      </div>
+      <div className="flex gap-4">
+        <CancelButton />
+        <SaveButton />
+      </div>
     </div>
   );
 }

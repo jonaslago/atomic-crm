@@ -67,8 +67,21 @@ async function updateSaleAvatar(user_id: string, avatar: string) {
 }
 
 async function inviteUser(req: Request, currentUserSale: any) {
-  const { email, password, first_name, last_name, disabled, administrator } =
-    await req.json();
+  const body = await req.json();
+  const {
+    email,
+    password,
+    first_name,
+    last_name,
+    disabled,
+    administrator,
+    // Brief 24: send_invite gøres eksplicit — default FALSE. Oprettelse
+    // og adgang er to forskellige ting. Invitationslinks udløber, saa
+    // en invite sendt for tidligt er formentlig doed naar brugeren
+    // skal bruge den. UI'et kalder "Send invitation" som separat
+    // handling naar det er tid.
+    send_invite = false,
+  } = body;
 
   if (!currentUserSale.administrator) {
     return createErrorResponse(401, "Not Authorized");
@@ -77,6 +90,10 @@ async function inviteUser(req: Request, currentUserSale: any) {
   const { data, error: userError } = await supabaseAdmin.auth.admin.createUser({
     email,
     password,
+    // email_confirm=true saa brugeren ikke faar en bekraftelses-mail
+    // ved oprettelse. Skal alligevel gennem invite-flow senere for at
+    // saette adgangskode via "Glemt password"-link.
+    email_confirm: true,
     user_metadata: { first_name, last_name },
   });
 
@@ -151,12 +168,16 @@ async function inviteUser(req: Request, currentUserSale: any) {
       console.error("Error inviting user: undefined user");
       return createErrorResponse(500, "Internal Server Error");
     }
-    const { error: emailError } =
-      await supabaseAdmin.auth.admin.inviteUserByEmail(email);
+    // Brief 24: kun send invitation hvis eksplicit anmodet. Default
+    // false — se send_invite-kommentaren øverst i funktionen.
+    if (send_invite) {
+      const { error: emailError } =
+        await supabaseAdmin.auth.admin.inviteUserByEmail(email);
 
-    if (emailError) {
-      console.error(`Error inviting user, email_error=${emailError}`);
-      return createErrorResponse(500, "Failed to send invitation mail");
+      if (emailError) {
+        console.error(`Error inviting user, email_error=${emailError}`);
+        return createErrorResponse(500, "Failed to send invitation mail");
+      }
     }
   }
 
@@ -259,6 +280,45 @@ async function patchUser(req: Request, currentUserSale: any) {
   }
 }
 
+/**
+ * Brief 24: separat "Send invitation"-handling paa en eksisterende
+ * bruger. Kaldes fra sales-fladen som en eksplicit knap ("Send
+ * invitation"), typisk lige inden en test starter, saa magic-link'et
+ * ikke er udloebet naar brugeren skal bruge det. Kun admin.
+ *
+ * POST /users/resend-invite  { sales_id }
+ */
+async function resendInvite(req: Request, currentUserSale: any) {
+  const { sales_id } = await req.json();
+
+  if (!currentUserSale.administrator) {
+    return createErrorResponse(401, "Not Authorized");
+  }
+
+  const { data: sale, error: fetchErr } = await supabaseAdmin
+    .from("sales")
+    .select("email")
+    .eq("id", sales_id)
+    .single();
+
+  if (fetchErr || !sale) {
+    return createErrorResponse(404, "Sale not found");
+  }
+
+  const { error: inviteErr } =
+    await supabaseAdmin.auth.admin.inviteUserByEmail(sale.email);
+
+  if (inviteErr) {
+    console.error("resend-invite failed:", inviteErr);
+    return createErrorResponse(500, "Failed to send invitation");
+  }
+
+  return new Response(
+    JSON.stringify({ data: { ok: true, email: sale.email } }),
+    { headers: { "Content-Type": "application/json", ...corsHeaders } },
+  );
+}
+
 Deno.serve(async (req: Request) =>
   OptionsMiddleware(req, async (req) =>
     AuthMiddleware(req, async (req) =>
@@ -266,6 +326,13 @@ Deno.serve(async (req: Request) =>
         const currentUserSale = await getUserSale(user);
         if (!currentUserSale) {
           return createErrorResponse(401, "Unauthorized");
+        }
+
+        const url = new URL(req.url);
+        // Brief 24: dedikeret sti for re-invite (adskiller adgangs-
+        // handling fra brugeroprettelse).
+        if (req.method === "POST" && url.pathname.endsWith("/resend-invite")) {
+          return resendInvite(req, currentUserSale);
         }
 
         if (req.method === "POST") {

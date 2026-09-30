@@ -11,6 +11,7 @@ import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/admin/spinner";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { Icon } from "@/lago/ui/Icon";
 
 import { ActivityLogCompanyCreated } from "@/components/atomic-crm/activity/ActivityLogCompanyCreated";
 import { ActivityLogContactCreated } from "@/components/atomic-crm/activity/ActivityLogContactCreated";
@@ -116,7 +117,7 @@ export function LagoActivityLogIterator() {
         </div>
         <div className="mt-2 text-center">
           <Button onClick={() => refetch()}>
-            <RotateCcw />
+            <Icon icon={RotateCcw} />
             {translate("crm.common.retry")}
           </Button>
         </div>

@@ -20,9 +20,12 @@ export function SalesCreate() {
       return dataProvider.salesCreate(data);
     },
     onSuccess: () => {
+      // LAGO Brief 24: oprettelse sender INGEN mail (send_invite default
+      // false i users edge function). Fallback-teksten skal ikke love
+      // en invitation der ikke er sendt.
       notify("resources.sales.create.success", {
         messageArgs: {
-          _: "User created. They will soon receive an email to set their password.",
+          _: "User created. No invitation email sent — use the Send invitation button on the user's page when access should be granted.",
         },
       });
       redirect("/sales");

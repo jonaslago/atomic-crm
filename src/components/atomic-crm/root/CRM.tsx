@@ -81,6 +81,17 @@ export type CRMProps = {
    * component, same pattern as `companyShow`.
    */
   companyList?: ComponentType;
+  /**
+   * LAGO addition: optional override for the `contacts` resource show
+   * component. When provided, both desktop and mobile Resource
+   * registrations use it instead of upstream's default ContactShow.
+   */
+  contactShow?: ComponentType;
+  /**
+   * LAGO addition: optional override for the `contacts` resource list
+   * component, same pattern as `contactShow`.
+   */
+  contactList?: ComponentType;
 } & Partial<ConfigurationContextValue>;
 
 /**
@@ -144,6 +155,8 @@ export const CRM = ({
   disableTelemetry,
   companyShow,
   companyList,
+  contactShow,
+  contactList,
   ...rest
 }: CRMProps) => {
   useEffect(() => {
@@ -243,6 +256,8 @@ export const CRM = ({
       disableTelemetry
       companyShow={companyShow}
       companyList={companyList}
+      contactShow={contactShow}
+      contactList={contactList}
       {...rest}
     />
   );
@@ -254,6 +269,8 @@ const DesktopAdmin = (
     layout?: LayoutComponent;
     companyShow?: ComponentType;
     companyList?: ComponentType;
+    contactShow?: ComponentType;
+    contactList?: ComponentType;
   },
 ) => {
   return (
@@ -283,7 +300,12 @@ const DesktopAdmin = (
         <Route path={ChangelogPage.path} element={<ChangelogPage />} />
       </CustomRoutes>
       <Resource name="deals" {...deals} />
-      <Resource name="contacts" {...contacts} />
+      <Resource
+        name="contacts"
+        {...contacts}
+        list={props.contactList ?? contacts.list}
+        show={props.contactShow ?? contacts.show}
+      />
       <Resource
         name="companies"
         {...companies}
@@ -305,6 +327,8 @@ const MobileAdmin = (
     layout?: LayoutComponent;
     companyShow?: ComponentType;
     companyList?: ComponentType;
+    contactShow?: ComponentType;
+    contactList?: ComponentType;
   },
 ) => {
   const queryClient = new QueryClient({
@@ -355,8 +379,8 @@ const MobileAdmin = (
         </CustomRoutes>
         <Resource
           name="contacts"
-          list={ContactListMobile}
-          show={ContactShow}
+          list={props.contactList ?? ContactListMobile}
+          show={props.contactShow ?? ContactShow}
           recordRepresentation={contacts.recordRepresentation}
         >
           <Route path=":id/notes/:noteId" element={<NoteShowPage />} />

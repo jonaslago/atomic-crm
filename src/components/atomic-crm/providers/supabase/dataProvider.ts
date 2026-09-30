@@ -19,6 +19,11 @@ import type { ConfigurationContextValue } from "../../root/ConfigurationContext"
 import { ATTACHMENTS_BUCKET } from "../commons/attachments";
 import { getIsInitialized } from "./authProvider";
 import { getSupabaseClient } from "./supabase";
+// #200 (18. sep 2026): pak Edge Function-fejl ud i stedet for at kaste
+// generiske engelske strenge. Uden det får sælgeren "Failed to create
+// the user" i stedet for "email already exists" — den slags fejl har
+// bidt fire gange og hver gang kostet timer.
+import { readEdgeFunctionError } from "@/lago/ui/errorMessage";
 
 const getBaseDataProvider = () =>
   supabaseDataProvider({
@@ -101,7 +106,10 @@ const getDataProviderWithCustomMethods = () => {
 
       if (!response.data?.user || response.error) {
         console.error("signUp.error", response.error);
-        throw new Error(response?.error?.message || "Failed to create account");
+        throw new Error(
+          (await readEdgeFunctionError(response.error)) ||
+            "Kunne ikke oprette konto",
+        );
       }
 
       // Update the is initialized cache
@@ -123,14 +131,10 @@ const getDataProviderWithCustomMethods = () => {
 
       if (!data || error) {
         console.error("salesCreate.error", error);
-        const errorDetails = await (async () => {
-          try {
-            return (await error?.context?.json()) ?? {};
-          } catch {
-            return {};
-          }
-        })();
-        throw new Error(errorDetails?.message || "Failed to create the user");
+        throw new Error(
+          (await readEdgeFunctionError(error)) ||
+            "Kunne ikke oprette brugeren",
+        );
       }
 
       return data.data;
@@ -159,8 +163,11 @@ const getDataProviderWithCustomMethods = () => {
         });
 
       if (!updatedData || error) {
-        console.error("salesCreate.error", error);
-        throw new Error("Failed to update account manager");
+        console.error("salesUpdate.error", error);
+        throw new Error(
+          (await readEdgeFunctionError(error)) ||
+            "Kunne ikke opdatere brugeren",
+        );
       }
 
       return updatedData.data;
@@ -176,7 +183,10 @@ const getDataProviderWithCustomMethods = () => {
 
       if (!passwordUpdated || error) {
         console.error("update_password.error", error);
-        throw new Error("Failed to update password");
+        throw new Error(
+          (await readEdgeFunctionError(error)) ||
+            "Kunne ikke opdatere adgangskoden",
+        );
       }
 
       return passwordUpdated;
@@ -220,7 +230,10 @@ const getDataProviderWithCustomMethods = () => {
 
       if (error) {
         console.error("merge_contacts.error", error);
-        throw new Error("Failed to merge contacts");
+        throw new Error(
+          (await readEdgeFunctionError(error)) ||
+            "Kunne ikke flette kontakterne",
+        );
       }
 
       return data;
@@ -444,7 +457,10 @@ const uploadToBucket = async (fi: RAFile) => {
 
   if (uploadError) {
     console.error("uploadError", uploadError);
-    throw new Error("Failed to upload attachment");
+    throw new Error(
+      (await readEdgeFunctionError(uploadError)) ||
+        "Kunne ikke uploade bilag",
+    );
   }
 
   const { data } = getSupabaseClient()

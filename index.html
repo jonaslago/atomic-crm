@@ -1,12 +1,12 @@
 <!doctype html>
-<html lang="en" translate="no" class="notranslate">
+<html lang="da" translate="no" class="notranslate">
   <head>
     <meta charset="utf-8" />
     <meta
       name="viewport"
       content="minimum-scale=1, initial-scale=1, width=device-width"
     />
-    <meta name="theme-color" content="#000000" />
+    <meta name="theme-color" content="#F7F7F6" />
     <meta name="google" content="notranslate" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
@@ -28,7 +28,7 @@
     <link rel="apple-touch-icon" sizes="180x180" href="./appIcon/180.png" />
     <link rel="apple-touch-icon" sizes="192x192" href="./appIcon/192.png" />
     <link rel="apple-touch-icon" sizes="1024x1024" href="./appIcon/1024.png" />
-    <title>Atomic CRM</title>
+    <title>LAGO CRM</title>
 
     <style>
       body {
@@ -56,7 +56,7 @@
         bottom: 0;
         left: 0;
         right: 0;
-        background-color: #fafafa;
+        background-color: #F7F7F6;
       }
 
       /* CSS Spinner from https://projects.lukehaas.me/css-loaders/ */
@@ -67,8 +67,12 @@
         border-radius: 50%;
       }
 
+      /* LAGO tokens duplikeret her fordi loaderen tegnes før bundle-CSS
+       * er loaded — custom properties fra tokens.css er endnu ikke i
+       * scope. Værdier: color=--a (accent), background=--canvas.
+       * Hold synkroniseret med src/lago/theme/tokens.css. */
       .loader {
-        color: #283593;
+        color: #00A99B;
         font-size: 11px;
         text-indent: -99999em;
         margin: 55px auto;
@@ -90,7 +94,7 @@
       .loader:before {
         width: 5.2em;
         height: 10.2em;
-        background: #fafafa;
+        background: #F7F7F6;
         border-radius: 10.2em 0 0 10.2em;
         top: -0.1em;
         left: -0.1em;
@@ -103,7 +107,7 @@
       .loader:after {
         width: 5.2em;
         height: 10.2em;
-        background: #fafafa;
+        background: #F7F7F6;
         border-radius: 0 10.2em 10.2em 0;
         top: -0.1em;
         left: 5.1em;
@@ -143,6 +147,48 @@
       </div>
     </div>
     <noscript>You need to enable JavaScript to run this app.</noscript>
+    <script>
+      // Supabase auth-callback interceptor (LAGO Brief 42-korrektur ·
+      // 16. sep 2026).
+      //
+      // Mail-links (recovery / magic-link) redirecter til site_url med
+      // tokens i URL-hash (#access_token=… eller #error=…). React
+      // HashRouter genkender ikke rå hash-tokens som en route, så vi
+      // omdirigerer selv til set-password / login før React monterer.
+      //
+      // Tre regler at holde adskilt fra hinanden — tidligere version
+      // brød reglerne, hvilket sendte gyldige set-password-links til
+      // login på kold start:
+      //
+      //   1) Rå tokens i hash (#access_token=X&refresh_token=Y&type=Z)
+      //      → redirect til #/set-password?access_token=X&…
+      //
+      //   2) Rå fejl i hash (#error=access_denied&error_description=…
+      //      typisk fra udløbet link) → redirect til #/login med
+      //      error-teksten som search-param så login-siden kan vise den.
+      //
+      //   3) Hash-route med query-hale (#/set-password?access_token=X
+      //      eller andre routes med ?params) → LAD DEN VÆRE. React-
+      //      routeren håndterer den, og useSupabaseAccessToken læser
+      //      tokens fra hash-query. En interceptor der kaprer alt med
+      //      "access_token=" i hash sendte gyldige set-password-URLs
+      //      tilbage til den (ikke-eksisterende) auth-callback-rute.
+      (function () {
+        var raw = window.location.hash.substring(1);
+        // Regel 3: hash-routes starter altid med "/". Kaprer aldrig dem.
+        if (raw.length === 0 || raw.charAt(0) === "/") return;
+        var params = new URLSearchParams(raw);
+        var target = null;
+        if (params.get("access_token")) {
+          target = "#/set-password?" + params.toString();
+        } else if (params.get("error") || params.get("error_description")) {
+          target = "#/login?" + params.toString();
+        }
+        if (target) {
+          window.location.replace(window.location.pathname + target);
+        }
+      })();
+    </script>
     <script type="module" src="<%= mainScript %>"></script>
   </body>
 </html>
