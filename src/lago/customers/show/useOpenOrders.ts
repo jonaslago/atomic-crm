@@ -90,6 +90,15 @@ export interface OpenOrderSummary {
    *  tillæg/afgifter (Vej, Energi, emb-afg) — de tælles i `total`
    *  men vises som én linje nederst, ikke som varer man venter på. */
   tillaegOgAfgifter: number;
+  /** §11d (30. sep 2026): notes from open_order_notes_lago, joined on
+   *  ordre_nr, sorted by linje_nr. Raw text, no interpretation. */
+  orderNotes: OrderNote[];
+}
+
+export interface OrderNote {
+  linje_nr: string;
+  note_type: "inote" | "enote";
+  beskrivelse: string;
 }
 
 /**
@@ -227,6 +236,34 @@ export function useOpenOrders(vismaCustomerNo: string | null | undefined) {
           beskrivelse: string | null;
         }>) {
           if (p.beskrivelse) navnByProduktnr.set(p.produktnr, p.beskrivelse);
+        }
+      }
+
+      // §11d (30. sep 2026): fetch notes for all orders on this customer.
+      // Joined on ordre_nr, sorted by linje_nr. One query, all orders.
+      const ordreNrSet = new Set(rows.map((r) => r.ordre_nr));
+      const notesByOrdre = new Map<string, OrderNote[]>();
+      if (ordreNrSet.size > 0) {
+        const { data: noteData, error: noteError } = await supabase
+          .from("open_order_notes_lago")
+          .select("ordre_nr, linje_nr, note_type, beskrivelse")
+          .in("ordre_nr", [...ordreNrSet])
+          .order("linje_nr", { ascending: true });
+        if (!noteError && noteData) {
+          for (const n of noteData as Array<{
+            ordre_nr: string;
+            linje_nr: string;
+            note_type: "inote" | "enote";
+            beskrivelse: string;
+          }>) {
+            const arr = notesByOrdre.get(n.ordre_nr) ?? [];
+            arr.push({
+              linje_nr: n.linje_nr,
+              note_type: n.note_type,
+              beskrivelse: n.beskrivelse,
+            });
+            notesByOrdre.set(n.ordre_nr, arr);
+          }
         }
       }
 
@@ -394,6 +431,7 @@ export function useOpenOrders(vismaCustomerNo: string | null | undefined) {
           note,
           lines: orderLines,
           tillaegOgAfgifter,
+          orderNotes: notesByOrdre.get(ordre_nr) ?? [],
         });
       }
       out.sort((a, b) => (a.ordre_dato < b.ordre_dato ? 1 : -1));
@@ -434,9 +472,7 @@ export function useOpenOrders(vismaCustomerNo: string | null | undefined) {
           (s, l) => s + Number(l.ej_faktureret ?? 0),
           0,
         );
-        const alleErReservation = synligeLines.every(
-          (l) => l.levering === "5",
-        );
+        const alleErReservation = synligeLines.every((l) => l.levering === "5");
         const alleErEnPrimeur = synligeLines.every((l) => l.status === "21");
         // Brief 90 §4-opfølgning: MAV = Levering=1. Ordre er MAV hvis
         // ALLE linjer har levering=1. Blandede ordrer findes ikke

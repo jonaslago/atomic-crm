@@ -30,6 +30,10 @@ import {
   resetTestdata,
 } from "./executeImport";
 import { parseAabneOrdrer } from "./parsers/aabneOrdrer";
+import {
+  parseAabneOrdreNoter,
+  type OpenOrderNotesPayload,
+} from "./parsers/aabneOrdreNoter";
 import { parseKunder } from "./parsers/kunder";
 import { parseProdukter } from "./parsers/produkter";
 import { parseProdukttransaktioner } from "./parsers/produkttransaktioner";
@@ -648,9 +652,13 @@ function AabneOrdrerImport({
   const { data: identity } = useGetIdentity();
   const currentSalesId = typeof identity?.id === "number" ? identity.id : null;
   const [file, setFile] = useState<File | null>(null);
+  // §11c (30. sep 2026): optional note file — second file input.
+  const [noteFile, setNoteFile] = useState<File | null>(null);
   const [result, setResult] = useState<DryRunResult<AabneOrdrerPayload> | null>(
     null,
   );
+  const [noteResult, setNoteResult] =
+    useState<DryRunResult<OpenOrderNotesPayload> | null>(null);
   const [busy, setBusy] = useState<"idle" | "parsing" | "importing">("idle");
   const [feedback, setFeedback] = useState<string | null>(null);
   const qc = useQueryClient();
@@ -668,9 +676,17 @@ function AabneOrdrerImport({
         },
       });
       setResult(r);
+      // §11c: parse note file if provided.
+      if (noteFile) {
+        const nr = await parseAabneOrdreNoter(noteFile);
+        setNoteResult(nr);
+      } else {
+        setNoteResult(null);
+      }
     } catch (err) {
       setFeedback(`Fejl ved parsing: ${(err as Error).message}`);
       setResult(null);
+      setNoteResult(null);
     } finally {
       setBusy("idle");
     }
@@ -681,16 +697,22 @@ function AabneOrdrerImport({
     setBusy("importing");
     setFeedback(null);
     try {
-      const { rowsWritten } = await importAabneOrdrer(
+      const { rowsWritten, notesWritten } = await importAabneOrdrer(
         result.payload,
         mode === "testdata",
         currentSalesId,
+        noteResult?.payload ?? null,
       );
+      const noteLabel = noteResult?.payload
+        ? `${notesWritten} noter`
+        : "noter ikke valgt";
       setFeedback(
-        `Importeret: ${rowsWritten} ordrelinjer (hele tabellen erstattet).`,
+        `Importeret: ${rowsWritten} ordrelinjer + ${noteLabel} (hele tabellen erstattet).`,
       );
       setFile(null);
+      setNoteFile(null);
       setResult(null);
+      setNoteResult(null);
       qc.invalidateQueries({ queryKey: SYNC_RUNS_KEY });
     } catch (err) {
       setFeedback(`Fejl ved import: ${(err as Error).message}`);
@@ -711,6 +733,17 @@ function AabneOrdrerImport({
           onFile={(f) => {
             setFile(f);
             setResult(null);
+            setNoteResult(null);
+            setFeedback(null);
+          }}
+          disabled={busy !== "idle"}
+        />
+        <FileInput
+          label="Vælg xlsx-fil (ordrenoter, valgfri — 13 kolonner med Produktnr 2)"
+          file={noteFile}
+          onFile={(f) => {
+            setNoteFile(f);
+            setNoteResult(null);
             setFeedback(null);
           }}
           disabled={busy !== "idle"}
@@ -755,6 +788,14 @@ function AabneOrdrerImport({
           </>
         )}
         {result && <DryRunSummary result={result} />}
+        {noteResult && (
+          <div className="mt-3 border-t border-[var(--line)] pt-3">
+            <p className="mb-2 text-sm font-medium text-[var(--fg-2)]">
+              Ordrenoter tørløb
+            </p>
+            <DryRunSummary result={noteResult} />
+          </div>
+        )}
       </div>
     </SectionShell>
   );

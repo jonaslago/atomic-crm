@@ -4,6 +4,7 @@
 // den authenticated Supabase-klient direkte fra frontend.
 
 import { getSupabaseClient } from "@/components/atomic-crm/providers/supabase/supabase";
+import type { OpenOrderNoteRow } from "./parsers/aabneOrdreNoter";
 import type {
   AabneOrdrerPayload,
   KontakterPayload,
@@ -382,7 +383,11 @@ export async function importAabneOrdrer(
   payload: AabneOrdrerPayload,
   er_testdata: boolean,
   koert_af: number | null,
-): Promise<{ rowsWritten: number }> {
+  /** §11b (30. sep 2026): optional note payload — written in the same
+   *  sequence as order lines. Missing notes must never block the order
+   *  import; we log that they were absent. */
+  notePayload?: OpenOrderNoteRow[] | null,
+): Promise<{ rowsWritten: number; notesWritten: number }> {
   const supabase = getSupabaseClient();
 
   // Åbne ordrer ERSTATTES helt — en ordre der ikke længere er åben skal
@@ -400,6 +405,13 @@ export async function importAabneOrdrer(
     .neq("ordre_nr", "__never_matches__");
   if (delErr) throw delErr;
 
+  // §11b: delete notes in the same sequence — one snapshot, one truth.
+  const { error: delNotesErr } = await supabase
+    .from("open_order_notes_lago")
+    .delete()
+    .neq("ordre_nr", "__never_matches__");
+  if (delNotesErr) throw delNotesErr;
+
   await inBatches(payload, async (batch) => {
     const rows = batch.map((r) => ({
       ...r,
@@ -411,18 +423,38 @@ export async function importAabneOrdrer(
     if (error) throw error;
   });
 
+  // §11b: write notes if provided. Missing notes = log, not block.
+  let notesWritten = 0;
+  if (notePayload && notePayload.length > 0) {
+    const now = new Date().toISOString();
+    await inBatches(notePayload, async (batch) => {
+      const rows = batch.map((r) => ({
+        ...r,
+        synced_at: now,
+      }));
+      const { error } = await supabase
+        .from("open_order_notes_lago")
+        .insert(rows);
+      if (error) throw error;
+    });
+    notesWritten = notePayload.length;
+  }
+
   const daterne = payload.map((r) => r.ordre_dato).sort();
+  const noteLabel = notePayload
+    ? `${notesWritten} noter`
+    : "noter manglede (fil ikke valgt)";
   await logSyncRun({
     datasaet: "open_orders",
     raekker: payload.length,
     er_testdata,
     periode_fra: daterne[0] ?? null,
     periode_til: daterne[daterne.length - 1] ?? null,
-    note: er_testdata ? "testdata" : "driftsdata",
+    note: `${er_testdata ? "testdata" : "driftsdata"} · ${noteLabel}`,
     koert_af,
   });
 
-  return { rowsWritten: payload.length };
+  return { rowsWritten: payload.length, notesWritten };
 }
 
 // -------------------- Produkter --------------------

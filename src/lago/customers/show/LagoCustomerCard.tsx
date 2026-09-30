@@ -1233,6 +1233,22 @@ function OrderRow({
       {open && hasLines && (
         <OrderLines lines={o.lines} tillaegOgAfgifter={o.tillaegOgAfgifter} />
       )}
+      {/* §11e (30. sep 2026): order notes from open_order_notes_lago.
+          Shown when the order is expanded and has notes. ExpandableNote
+          handles the folding — median is 1 line, max is 21. */}
+      {open && o.orderNotes.length > 0 && (
+        <div className="mt-1 pl-[1.125rem]">
+          <ExpandableNote
+            text={o.orderNotes.map((n) => n.beskrivelse).join("\n")}
+            clampLines={3}
+            className="text-[length:var(--t-meta)] text-[var(--fg-2)]"
+          />
+          <p className="mt-0.5 text-[12px] text-[var(--fg-3)]">
+            {o.orderNotes.length}{" "}
+            {o.orderNotes.length === 1 ? "notelinje" : "notelinjer"}
+          </p>
+        </div>
+      )}
     </li>
   );
 }
