@@ -290,7 +290,10 @@ export function useOpenOrders(vismaCustomerNo: string | null | undefined) {
       // afgifter, ikke varer. De tælles i "I alt" men vises samlet
       // nederst — en vejafgift "afventer" ikke ankomst, den er en
       // post på regningen.
-      const TILLAEG_PRODUKTNR = new Set(["Vej", "Energi", "emb-afg"]);
+      // §32d (30. sep 2026): only Vej, Energi, and FRAGT are fees.
+      // emb-afg removed (99110 "Etiketter" is a revenue item, not a fee).
+      // FRAGT added (produktnr "FRAGT" in products_lago).
+      const TILLAEG_PRODUKTNR = new Set(["Vej", "Energi", "FRAGT"]);
       for (const [ordre_nr, lines] of byOrdre) {
         // §11 opfølgning (29. sep 2026): er_par_komponent kommer fra
         // viewet — komponentens reservation er allerede overtaget af

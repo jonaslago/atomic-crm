@@ -10,11 +10,14 @@
 -- Reglen ligger nu i basen som view. Både kundekortet og widget'et læser
 -- det samme; visningslaget kan ikke længere have sin egen mening.
 --
--- Par-reglen (målt i produktion 29. sep 2026 · 3 SKU'er 36 linjer 37/37):
---   Salgsvare  = undtages_lagerhaandtering = true AND ej_faktureret > 0
+-- Par-reglen (rev. §32e, 30. sep 2026):
+--   Salgsvare  = undtages_lagerhaandtering = true
+--                AND (ej_faktureret > 0 OR salgstype = 'FRIFL')
 --                AND antal > 0
 --   Komponent  = undtages_lagerhaandtering = false AND ej_faktureret = 0
 --                AND reserveret_mod_lager > 0 AND antal > 0
+--   FRIFL (fri flaske, 0 kr.) is a revenue item; its component
+--   carries the reservation as always.
 --   Match      = samme ordre_nr AND samme split_part(produktnr, '-', 1)
 --                AND samme antal
 --   Præcis 1   = én komponent-kandidat pr. salgsvare OG én salgsvare-
@@ -33,7 +36,7 @@ WITH salgsvarer AS (
         reserveret_mod_lager
     FROM public.open_orders_lago
     WHERE undtages_lagerhaandtering = true
-      AND ej_faktureret > 0
+      AND (ej_faktureret > 0 OR salgstype = 'FRIFL')
       AND antal > 0
 ),
 komponenter AS (
