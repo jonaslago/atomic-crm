@@ -954,18 +954,44 @@ export function AabneOrdrerSection({
     }
     return map;
   }, [kommentarerQuery.data]);
-  // Brief 75 tillæg D §4 (22. sep 2026): folde-ud pr. ordre. Kun de
-  // ordrer der har rest-linjer starter åbne — resten kan foldes op af
-  // sælgeren når hun har brug for det. Toggle-state ligger her i
-  // parent så vi kan resette hvis kunden skifter.
-  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  // §20d (30. sep 2026): orders start collapsed. Session-state per
+  // customer so toggling survives navigation within a session.
+  // sessionStorage key includes companyId so each customer remembers
+  // independently. The old code initialized with an empty Set but the
+  // comment said "rest-linjer starter åbne" — neither matched what the
+  // user saw (all expanded). Now explicitly collapsed by default.
+  const storageKey = `lago-ordre-expanded-${companyId}`;
+  const [expanded, setExpanded] = useState<Set<string>>(() => {
+    try {
+      const raw = sessionStorage.getItem(storageKey);
+      if (raw) return new Set(JSON.parse(raw) as string[]);
+    } catch {
+      /* ignore corrupt storage */
+    }
+    return new Set<string>();
+  });
+  const persistExpanded = (next: Set<string>) => {
+    setExpanded(next);
+    try {
+      sessionStorage.setItem(storageKey, JSON.stringify([...next]));
+    } catch {
+      /* quota exceeded — ignore */
+    }
+  };
   const toggleExpanded = (ordreNr: string) => {
-    setExpanded((prev) => {
-      const next = new Set(prev);
-      if (next.has(ordreNr)) next.delete(ordreNr);
-      else next.add(ordreNr);
-      return next;
-    });
+    const next = new Set(expanded);
+    if (next.has(ordreNr)) next.delete(ordreNr);
+    else next.add(ordreNr);
+    persistExpanded(next);
+  };
+  const allExpanded =
+    orders.length > 0 && orders.every((o) => expanded.has(o.ordre_nr));
+  const toggleAll = () => {
+    if (allExpanded) {
+      persistExpanded(new Set());
+    } else {
+      persistExpanded(new Set(orders.map((o) => o.ordre_nr)));
+    }
   };
   // Brief 89 (28. sep 2026): flervalg til "Kommentér valgte". Ét afkryds-
   // felt pr. ordre. Én kommentar → én række pr. ordre (så de kan lukkes
@@ -1001,12 +1027,34 @@ export function AabneOrdrerSection({
           variant="label"
           title="Åbne ordrer"
           subtitle={orders.length > 0 ? `${orders.length} aktive` : undefined}
+          right={
+            orders.length > 1 ? (
+              <button
+                type="button"
+                onClick={toggleAll}
+                className="text-[length:var(--t-meta)] font-medium text-[var(--fg-2)] hover:text-[var(--fg)] underline-offset-2 hover:underline"
+              >
+                {allExpanded ? "Fold alle sammen" : "Fold alle ud"}
+              </button>
+            ) : undefined
+          }
         />
       ) : (
         <SectionHeader
           title="Åbne ordrer"
           right={
-            orders.length > 0 ? <Meta>{orders.length} aktive</Meta> : undefined
+            <span className="flex items-center gap-3">
+              {orders.length > 0 && <Meta>{orders.length} aktive</Meta>}
+              {orders.length > 1 && (
+                <button
+                  type="button"
+                  onClick={toggleAll}
+                  className="text-[length:var(--t-meta)] font-medium text-[var(--fg-2)] hover:text-[var(--fg)] underline-offset-2 hover:underline"
+                >
+                  {allExpanded ? "Fold sammen" : "Fold ud"}
+                </button>
+              )}
+            </span>
           }
         />
       )}
