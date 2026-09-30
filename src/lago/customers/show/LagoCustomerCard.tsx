@@ -1295,16 +1295,31 @@ function OrderLines({
   // "klar" markerer grænsen mellem afventende og afsendte varer.
   const firstKlarIdx = visibleLines.findIndex((l) => l.kundeStatus === "klar");
   return (
-    <div className="@container mt-1 rounded-md bg-[var(--surface-1)] p-2">
-      {/* §20 (30. sep 2026): @container on this div enables the @[640px]
-          container query below. Without it the query never matches. */}
+    <div className="@container mt-1">
+      {/* §20b-a (30. sep 2026): no grey box — lines sit directly on
+          --surface, separated by hairline --line borders. */}
+      {/* §20b-f: Vare gets remaining space (w-full), Antal/Beløb/Status
+          shrink to content (w-auto whitespace-nowrap). Names wrap instead
+          of truncating — a truncated product name is useless. */}
       <table className="hidden w-full text-sm @[640px]:table">
+        <colgroup>
+          <col className="w-full" />
+          <col />
+          <col />
+          <col />
+        </colgroup>
         <thead>
           <tr className="text-left text-[length:var(--t-meta)] font-medium text-[var(--fg-3)]">
             <th className="pb-2 pr-3 font-medium">Vare</th>
-            <th className="pb-2 pr-3 text-right font-medium">Antal</th>
-            <th className="pb-2 pr-3 text-right font-medium">Beløb</th>
-            <th className="pb-2 text-right font-medium">Status</th>
+            <th className="whitespace-nowrap pb-2 pr-3 text-right font-medium">
+              Antal
+            </th>
+            <th className="whitespace-nowrap pb-2 pr-3 text-right font-medium">
+              Beløb
+            </th>
+            <th className="whitespace-nowrap pb-2 text-right font-medium">
+              Status
+            </th>
           </tr>
         </thead>
         <tbody>
@@ -1318,24 +1333,21 @@ function OrderLines({
               />
             );
           })}
-          {/* Sumrække — det tal ingen kan regne i hovedet. */}
-          <tr className="border-t-2 border-[var(--line-2)]">
-            <td
-              className="pt-2 text-[length:var(--t-meta)] text-[var(--fg-2)]"
-              colSpan={2}
-            >
+          {/* §20b-b/c: hairline border, aligned to columns. Klar/Afventer
+              as Meta in the Vare column; total under Beløb column. */}
+          <tr className="border-t border-[var(--line)]">
+            <td className="pt-2 text-[length:var(--t-meta)] text-[var(--fg-2)]">
               Klar {kroner.format(klarSum)} · Afventer{" "}
               {kroner.format(afventerSum)}
               {tillaegOgAfgifter > 0
                 ? ` · Tillæg ${kroner.format(tillaegOgAfgifter)}`
                 : ""}
             </td>
-            <td className="pt-2 text-right text-[length:var(--t-meta)] text-[var(--fg-2)]">
-              I alt
-            </td>
+            <td className="pt-2" />
             <td className="pt-2 text-right font-medium tabular-nums text-[var(--fg)]">
               {kroner.format(iAltSum)}
             </td>
+            <td className="pt-2" />
           </tr>
           {hidden > 0 && (
             <tr>
@@ -1409,16 +1421,19 @@ function OrderLineTableRow({
           : `${l.reserveret} klar, ${l.rest} mangler`;
   return (
     <tr className={showDivider ? "border-t border-[var(--line)]" : ""}>
-      <td className="max-w-0 truncate py-1.5 pr-3 text-[var(--fg)]">
+      {/* §20b-f: break-words instead of truncate — an ellipsised product
+          name is useless for a salesperson standing with the customer. */}
+      <td className="py-1.5 pr-3 text-[var(--fg)] break-words">
         {l.produktnavn}
         {l.belobLabel && (
           <span className="text-[var(--fg-3)]"> · {l.belobLabel}</span>
         )}
       </td>
-      <td className="py-1.5 pr-3 text-right tabular-nums text-[var(--fg)]">
+      {/* §20b-d: tabular-nums + whitespace-nowrap on both columns. */}
+      <td className="whitespace-nowrap py-1.5 pr-3 text-right tabular-nums text-[var(--fg)]">
         {l.antal || ""}
       </td>
-      <td className="py-1.5 pr-3 text-right tabular-nums text-[var(--fg)]">
+      <td className="whitespace-nowrap py-1.5 pr-3 text-right tabular-nums text-[var(--fg)]">
         {kroner.format(l.ej_faktureret)}
       </td>
       <td
@@ -1516,8 +1531,12 @@ function OrderLineRow({
 function OrderTotals({ totals }: { totals: OpenOrdersTotals }) {
   return (
     <div className="mt-3 flex flex-col gap-1 border-t border-[var(--line)] pt-3 text-sm">
+      {/* §20b-e: "Alle åbne ordrer" instead of "I alt" — when the
+          customer has one order, "I alt" repeats three times on screen
+          (order row, table sum row, card footer). This labels what the
+          sum covers, not just that it is one. */}
       <div className="flex items-baseline justify-between gap-3">
-        <span className="text-[var(--fg-2)]">I alt</span>
+        <span className="text-[var(--fg-2)]">Alle åbne ordrer</span>
         <span className="font-medium text-[var(--fg)] tabular-nums">
           {kroner.format(totals.iAlt)}
         </span>
