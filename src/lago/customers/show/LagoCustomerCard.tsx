@@ -1,13 +1,29 @@
 import { useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { useGetIdentity, useTranslate } from "ra-core";
 import { Link } from "react-router-dom";
 import { MapPin, Pencil, Phone, Plus } from "lucide-react";
 
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { useConfigurationContext } from "@/components/atomic-crm/root/ConfigurationContext";
 
 import { useIsLagoAdmin } from "@/lago/auth/useIsLagoAdmin";
 import { useSoftDeleteActivity } from "@/lago/registrer/mutations";
+import {
+  fetchOrdreKommentarerForCompany,
+  HENSIGT_LABEL,
+  type OrdreKommentar,
+} from "@/lago/customers/ordreKommentarer";
+import { OrdreKommentarDialog } from "./OrdreKommentarDialog";
 import { EditActivityDialog } from "@/lago/registrer/EditActivityDialog";
 import { RowActionsMenu } from "@/lago/dashboard/RowActionsMenu";
 
@@ -31,7 +47,14 @@ import type {
 } from "../types";
 import { ContactDialog } from "./ContactDialog";
 import { DetaljerDialog } from "./DetaljerDialog";
+import { ExpandableNote } from "@/lago/ui/ExpandableNote";
+import { plural } from "@/lago/ui/plural";
+
 import { BesoegsfrekvensDialog } from "./BesoegsfrekvensDialog";
+import { EditNoteDialog } from "./EditNoteDialog";
+import { RingelisteLukDialog } from "../list/RingelisteLukDialog";
+import { SaesonlukketDialog } from "./SaesonlukketDialog";
+import { SletNoteDialog } from "./SletNoteDialog";
 import { useCurrentLagoRole } from "@/lago/auth/useCurrentLagoRole";
 import { ProposeChangeButton } from "./ProposeChangeDialog";
 import {
@@ -112,7 +135,11 @@ export function LagoCustomerCard({ data }: { data: LagoCustomerData }) {
         contacts={data.contacts}
       />
       <OmsaetningSection extension={data.extension} />
-      <AabneOrdrerSection extension={data.extension} />
+      <AabneOrdrerSection
+        extension={data.extension}
+        companyId={data.company.id}
+        companyName={data.company.name}
+      />
       <StamdataSection data={data} />
     </div>
   );
@@ -237,6 +264,26 @@ export function HvadSketeDerSidstSection({
     activity_type_code: number | null;
     description: string | null;
   } | null>(null);
+  // Brief 87 audit-svar #3 (28. sep 2026): sletning kræver dialog, alle
+  // bredder. Ingen ny komponent — shadcn Dialog inline. Kortlægges hvis
+  // aktiviteten er en andens (admin på Peters række): navngiv ejeren.
+  const [deleteRow, setDeleteRow] = useState<{
+    id: number;
+    text: string;
+    ownerName: string | null;
+  } | null>(null);
+  // Sletteregler (29. sep 2026): egne dialog-tilstande for noter så
+  // aktivitetens slet-dialog ikke skal håndtere begrundelse-feltet.
+  const [editNoteRow, setEditNoteRow] = useState<{
+    id: number;
+    text: string;
+  } | null>(null);
+  const [sletNoteRow, setSletNoteRow] = useState<{
+    id: number;
+    text: string;
+    isSomeoneElses: boolean;
+    ownerName: string | null;
+  } | null>(null);
   // Brief 48 §D (16. sep 2026): "Hvad skete der sidst" — ikke "alt hvad
   // der nogensinde er sket". Vis 5 nyeste, "Se alle N" folder resten ud
   // i-place når man vil se hele historikken.
@@ -255,17 +302,25 @@ export function HvadSketeDerSidstSection({
         salesName: a.sales_name ?? null,
         date: a.activity_date,
         detail: a.description ?? null,
-        raw: a,
+        raw: { __kind: "activity" as const, ...a },
       }));
     // Noter, der er skrevet på kunden (uden en tilknyttet task), er
-    // også en del af historikken.
+    // også en del af historikken. Sletteregler (29. sep 2026): raw
+    // bærer nu noten selv, så canEditNote og rowActions kan bruge id
+    // og sales_id — før var raw null, og noter fik ingen handlinger.
     const noteRows = data.notes.map((n) => ({
       id: `note-${n.id}`,
       kind: "Note" as string,
-      salesName: null,
+      salesName: null as string | null,
       date: n.created_at,
       detail: n.text,
-      raw: null,
+      raw: {
+        __kind: "note" as const,
+        id: n.id,
+        company_id: n.company_id,
+        sales_id: n.sales_id ?? null,
+        text: n.text,
+      },
     }));
     return [...activityRows, ...noteRows].sort((a, b) =>
       a.date < b.date ? 1 : -1,
@@ -273,10 +328,19 @@ export function HvadSketeDerSidstSection({
   }, [data.activities, data.notes, taskTypes]);
 
   const canEditActivity = (raw: (typeof rows)[number]["raw"]) => {
-    if (!raw) return false;
+    if (!raw || raw.__kind !== "activity") return false;
     return (
       raw.source === "crm_native" &&
       (isAdmin || (currentSalesId != null && raw.sales_id === currentSalesId))
+    );
+  };
+
+  // Sletteregler (29. sep 2026): noter er altid CRM-native — de kan
+  // ikke komme fra VISMA. Ejer eller admin må redigere og slette.
+  const canEditNote = (raw: (typeof rows)[number]["raw"]) => {
+    if (!raw || raw.__kind !== "note") return false;
+    return (
+      isAdmin || (currentSalesId != null && raw.sales_id === currentSalesId)
     );
   };
 
@@ -288,12 +352,20 @@ export function HvadSketeDerSidstSection({
         <SectionHeader
           variant="label"
           title="Aktivitetshistorik"
-          subtitle={rows.length > 0 ? `${rows.length} aktiviteter` : undefined}
+          subtitle={
+            rows.length > 0
+              ? plural(rows.length, "aktivitet", "aktiviteter")
+              : undefined
+          }
         />
       ) : (
         <SectionHeader
           title="Hvad skete der sidst"
-          right={rows.length > 0 && <Meta>{rows.length} aktiviteter</Meta>}
+          right={
+            rows.length > 0 && (
+              <Meta>{plural(rows.length, "aktivitet", "aktiviteter")}</Meta>
+            )
+          }
         />
       )}
       {rows.length === 0 ? (
@@ -306,7 +378,11 @@ export function HvadSketeDerSidstSection({
         <RowGroup>
           {visibleRows.map((r) => {
             const rowActions = [];
-            if (r.raw && canEditActivity(r.raw)) {
+            if (
+              r.raw &&
+              r.raw.__kind === "activity" &&
+              canEditActivity(r.raw)
+            ) {
               rowActions.push({
                 label: "Redigér",
                 onSelect: () =>
@@ -320,12 +396,52 @@ export function HvadSketeDerSidstSection({
               });
               rowActions.push({
                 label: "Slet",
+                // Brief 87 audit-svar #3: åbner dialog, sletter ikke direkte.
+                onSelect: () => {
+                  const owner =
+                    currentSalesId != null &&
+                    r.raw?.sales_id != null &&
+                    r.raw.sales_id !== currentSalesId
+                      ? (r.raw.sales_name ?? null)
+                      : null;
+                  setDeleteRow({
+                    id: r.raw!.id,
+                    text: r.detail?.trim() || r.kind,
+                    ownerName: owner,
+                  });
+                },
+                destructive: true,
+              });
+            }
+            // Sletteregler (29. sep 2026): noter fik ingen handlinger
+            // før — canEditActivity krævede source='crm_native' og note-
+            // raw havde ingen source. canEditNote parallelliserer reglen.
+            if (r.raw && r.raw.__kind === "note" && canEditNote(r.raw)) {
+              const noteRaw = r.raw;
+              rowActions.push({
+                label: "Redigér",
                 onSelect: () =>
-                  softDelete.mutate({
-                    activityId: r.raw!.id,
-                    companyId: data.company.id,
-                    companyName: data.company.name,
-                  }),
+                  setEditNoteRow({ id: noteRaw.id, text: noteRaw.text }),
+              });
+              rowActions.push({
+                label: "Slet",
+                onSelect: () => {
+                  const isSomeoneElses =
+                    currentSalesId != null &&
+                    noteRaw.sales_id != null &&
+                    noteRaw.sales_id !== currentSalesId;
+                  setSletNoteRow({
+                    id: noteRaw.id,
+                    text: noteRaw.text,
+                    isSomeoneElses,
+                    // Note: sales_name-lookup mangler et sted at slå op —
+                    // vi har kun sales_id på noten. Kort tekst "en anden"
+                    // bruges indtil useSellerLookup passes ned; ingen risk
+                    // for stille sletning fordi begrundelse-feltet
+                    // stadig er påkrævet.
+                    ownerName: isSomeoneElses ? "en anden" : null,
+                  });
+                },
                 destructive: true,
               });
             }
@@ -354,9 +470,10 @@ export function HvadSketeDerSidstSection({
                   </div>
                 </div>
                 {r.detail && (
-                  <p className="text-sm text-[var(--fg-2)] whitespace-pre-wrap">
-                    {r.detail}
-                  </p>
+                  <ExpandableNote
+                    text={r.detail}
+                    className="text-sm text-[var(--fg-2)]"
+                  />
                 )}
               </li>
             );
@@ -384,6 +501,85 @@ export function HvadSketeDerSidstSection({
           lastVisitWithoutThis={null}
         />
       )}
+      {editNoteRow && (
+        <EditNoteDialog
+          open={editNoteRow != null}
+          onOpenChange={(v) => !v && setEditNoteRow(null)}
+          noteId={editNoteRow.id}
+          companyId={data.company.id}
+          initialText={editNoteRow.text}
+        />
+      )}
+      {sletNoteRow && (
+        <SletNoteDialog
+          open={sletNoteRow != null}
+          onOpenChange={(v) => !v && setSletNoteRow(null)}
+          noteId={sletNoteRow.id}
+          companyId={data.company.id}
+          noteText={sletNoteRow.text}
+          isSomeoneElses={sletNoteRow.isSomeoneElses}
+          ownerName={sletNoteRow.ownerName}
+        />
+      )}
+      {/* Brief 87 audit-svar #3 (28. sep 2026): slet-dialog, alle bredder.
+          Navngiver aktivitetens tekst; under admin på en andens række
+          også ejeren. Slet er destruktiv rød, Fortryd sekundær. */}
+      <Dialog
+        open={deleteRow != null}
+        onOpenChange={(v) => !v && setDeleteRow(null)}
+      >
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Slet aktivitet?</DialogTitle>
+            <DialogDescription>
+              Aktiviteten forsvinder fra kunden. Kan fortrydes i toast'en de
+              næste 5 sekunder.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <div>
+              <div className="text-[13px] font-medium text-[var(--fg-3)] uppercase tracking-wide">
+                Aktivitet
+              </div>
+              <p className="mt-0.5 line-clamp-4 whitespace-pre-wrap text-sm text-[var(--fg)]">
+                {deleteRow?.text || "(uden tekst)"}
+              </p>
+            </div>
+            {deleteRow?.ownerName && (
+              <p className="rounded-md bg-[var(--surface-1)] px-3 py-2 text-sm text-[var(--fg-2)]">
+                Dette er {deleteRow.ownerName}s aktivitet.
+              </p>
+            )}
+          </div>
+          <DialogFooter className="flex-row justify-end gap-2 sm:justify-end">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setDeleteRow(null)}
+              disabled={softDelete.isPending}
+            >
+              Fortryd
+            </Button>
+            <Button
+              type="button"
+              onClick={() => {
+                if (!deleteRow) return;
+                const id = deleteRow.id;
+                setDeleteRow(null);
+                softDelete.mutate({
+                  activityId: id,
+                  companyId: data.company.id,
+                  companyName: data.company.name,
+                });
+              }}
+              disabled={softDelete.isPending}
+              className="bg-[var(--st-red-fg)] text-white hover:bg-[var(--st-red-fg)]/90"
+            >
+              Slet
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Section>
   );
 }
@@ -723,9 +919,13 @@ export function OmsaetningSection({
 
 export function AabneOrdrerSection({
   extension,
+  companyId,
+  companyName,
   layout = "mobile",
 }: {
   extension: CompanyLagoExtension | null;
+  companyId: number;
+  companyName: string;
   layout?: SectionLayout;
 }) {
   const isLaptop = layout === "laptop";
@@ -738,6 +938,22 @@ export function AabneOrdrerSection({
     paaReservation: 0,
     iAlt: 0,
   };
+  // Brief 89 (28. sep 2026): hent kommentarer på kundens ordrer så vi
+  // kan vise dem under hver række og undgå dobbelt-kommentar.
+  const kommentarerQuery = useQuery({
+    queryKey: ["lago-ordre-kommentarer", companyId],
+    queryFn: () => fetchOrdreKommentarerForCompany(companyId),
+    staleTime: 30_000,
+  });
+  const kommentarerPrOrdre = useMemo(() => {
+    const map = new Map<string, OrdreKommentar[]>();
+    for (const k of kommentarerQuery.data ?? []) {
+      const cur = map.get(k.ordreNr);
+      if (cur) cur.push(k);
+      else map.set(k.ordreNr, [k]);
+    }
+    return map;
+  }, [kommentarerQuery.data]);
   // Brief 75 tillæg D §4 (22. sep 2026): folde-ud pr. ordre. Kun de
   // ordrer der har rest-linjer starter åbne — resten kan foldes op af
   // sælgeren når hun har brug for det. Toggle-state ligger her i
@@ -751,13 +967,32 @@ export function AabneOrdrerSection({
       return next;
     });
   };
+  // Brief 89 (28. sep 2026): flervalg til "Kommentér valgte". Ét afkryds-
+  // felt pr. ordre. Én kommentar → én række pr. ordre (så de kan lukkes
+  // hver for sig). "Kommentér valgte"-knap er aktiv når mindst én er valgt.
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const toggleSelected = (ordreNr: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(ordreNr)) next.delete(ordreNr);
+      else next.add(ordreNr);
+      return next;
+    });
+  };
+  const [dialogOpen, setDialogOpen] = useState(false);
   // Brief 75 tillæg E (22. sep 2026): tavs top-5 var farlig. Overskriften
   // siger "12 aktive" og totalen dækker 12, men listen viste 5 uden
   // markering — sælgeren kunne ikke se hvor de andre 7 var. 19 kunder
   // har > 5 åbne ordrer (max 16 hos Prebens). Vis "Vis alle N →" når
   // grænsen skjuler ordrer, ellers ikke.
   const [showAllOrders, setShowAllOrders] = useState(false);
-  const visibleOrders = showAllOrders ? orders : orders.slice(0, ORDER_LIMIT);
+  // Brief 90 opfølgning (29. sep 2026): klip kun når der er MERE end
+  // 2 skjulte. Et link for at afsløre én ordre er ikke besværet værd
+  // — vis dem alle når hiddenIfClipped ≤ 2. Klippet gælder først når
+  // orders.length overstiger ORDER_LIMIT + 2 = 7.
+  const hiddenIfClipped = Math.max(0, orders.length - ORDER_LIMIT);
+  const shouldClip = !showAllOrders && hiddenIfClipped > 2;
+  const visibleOrders = shouldClip ? orders.slice(0, ORDER_LIMIT) : orders;
   const hiddenOrders = orders.length - visibleOrders.length;
   return (
     <Section variant={isLaptop ? "panel" : "divider"}>
@@ -789,6 +1024,29 @@ export function AabneOrdrerSection({
         <p className="text-sm text-[var(--fg-2)]">Ingen åbne ordrer.</p>
       ) : (
         <>
+          {/* Brief 89 (28. sep 2026): "Kommentér valgte" over listen.
+              Aktiv når mindst én ordre er valgt. Åbner dialog der
+              opretter én kommentar-række pr. ordre. */}
+          <div className="mb-2 flex items-center justify-between gap-3">
+            <span className="text-[length:var(--t-meta)] text-[var(--fg-3)]">
+              {selected.size > 0
+                ? `${selected.size} valgt`
+                : "Vælg for at kommentere"}
+            </span>
+            <button
+              type="button"
+              onClick={() => setDialogOpen(true)}
+              disabled={selected.size === 0}
+              className={cn(
+                "min-h-9 rounded-md px-3 text-sm font-medium",
+                selected.size > 0
+                  ? "bg-[var(--ink)] text-white hover:bg-[var(--ink)]/90"
+                  : "bg-[var(--surface-2)] text-[var(--fg-3)]",
+              )}
+            >
+              Kommentér valgte
+            </button>
+          </div>
           <RowGroup>
             {visibleOrders.map((o) => (
               <OrderRow
@@ -796,21 +1054,36 @@ export function AabneOrdrerSection({
                 order={o}
                 open={expanded.has(o.ordre_nr)}
                 onToggle={() => toggleExpanded(o.ordre_nr)}
+                selected={selected.has(o.ordre_nr)}
+                onToggleSelect={() => toggleSelected(o.ordre_nr)}
+                kommentarer={kommentarerPrOrdre.get(o.ordre_nr) ?? []}
               />
             ))}
           </RowGroup>
           {hiddenOrders > 0 && (
-            <button
-              type="button"
-              onClick={() => setShowAllOrders(true)}
-              className="mt-1 self-start text-[length:var(--t-sec)] text-[var(--fg-2)] font-medium underline-offset-2 hover:underline"
-            >
-              Vis alle {orders.length} ordrer →
-            </button>
+            <div className="mt-3 self-start">
+              <LagoButton
+                variant="secondary"
+                onClick={() => setShowAllOrders(true)}
+              >
+                Vis alle {orders.length}{" "}
+                {orders.length === 1 ? "ordre" : "ordrer"}
+              </LagoButton>
+            </div>
           )}
           <OrderTotals totals={totals} />
         </>
       )}
+      <OrdreKommentarDialog
+        open={dialogOpen}
+        onOpenChange={(v) => {
+          setDialogOpen(v);
+          if (!v) setSelected(new Set());
+        }}
+        companyId={companyId}
+        companyName={companyName}
+        ordreNumre={Array.from(selected)}
+      />
     </Section>
   );
 }
@@ -830,10 +1103,16 @@ function OrderRow({
   order: o,
   open,
   onToggle,
+  selected,
+  onToggleSelect,
+  kommentarer,
 }: {
   order: OpenOrderSummary;
   open: boolean;
   onToggle: () => void;
+  selected: boolean;
+  onToggleSelect: () => void;
+  kommentarer: OrdreKommentar[];
 }) {
   const hasLines = o.lines.length > 0;
   const chevron = open ? "▾" : "▸";
@@ -848,53 +1127,69 @@ function OrderRow({
         : null;
   return (
     <li className="flex flex-col gap-1">
-      <button
-        type="button"
-        onClick={onToggle}
-        disabled={!hasLines}
-        className="flex w-full flex-col gap-0.5 text-left"
-      >
-        <div className="flex items-center justify-between gap-2">
-          <div className="flex min-w-0 items-baseline gap-1.5">
-            {hasLines && (
-              <span
-                aria-hidden
-                className="w-3 shrink-0 text-[var(--fg-3)] tabular-nums"
-              >
-                {chevron}
+      {/* Brief 89 (28. sep 2026): afkrydsningsfelt pr. ordre — pladseret
+          udenfor toggle-knappen så en klik på checkbox ikke folder rækken
+          ud/ind. */}
+      <div className="flex items-start gap-2">
+        <input
+          type="checkbox"
+          checked={selected}
+          onChange={onToggleSelect}
+          aria-label={`Vælg ordre ${o.ordre_nr} til kommentar`}
+          className="mt-1 h-4 w-4 shrink-0 cursor-pointer accent-[var(--ink)]"
+        />
+        <button
+          type="button"
+          onClick={onToggle}
+          disabled={!hasLines}
+          className="flex flex-1 flex-col gap-0.5 text-left"
+        >
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex min-w-0 items-baseline gap-1.5">
+              {hasLines && (
+                <span
+                  aria-hidden
+                  className="w-3 shrink-0 text-[var(--fg-3)] tabular-nums"
+                >
+                  {chevron}
+                </span>
+              )}
+              <span className="text-[length:var(--t-meta)] text-[var(--fg-3)]">
+                Ordre #{o.ordre_nr}
               </span>
-            )}
-            <span className="text-[length:var(--t-meta)] text-[var(--fg-3)]">
-              Ordre #{o.ordre_nr}
+            </div>
+            {/* §20 (30. sep 2026): Meta replaces StatusBadge — one text label
+              per order, not a colored pill per line. Ten pills in a column
+              was the visual noise we wanted to avoid. */}
+            <Meta>
+              {o.status === "reservation"
+                ? "På reservation"
+                : o.status === "klar"
+                  ? "Klar"
+                  : "Restordre"}
+              {o.isMav ? " · MAV" : ""}
+            </Meta>
+          </div>
+          <div className="flex items-baseline justify-between gap-2 pl-[1.125rem]">
+            <span className="min-w-0 truncate text-[length:var(--t-sec)] text-[var(--fg-2)]">
+              {dateShort(o.ordre_dato)}
+              {summaryLabel && ` · ${summaryLabel}`}
+            </span>
+            <span className="shrink-0 text-sm text-[var(--fg)] tabular-nums">
+              {kroner.format(o.total)}
             </span>
           </div>
-          {o.status === "reservation" ? (
-            <StatusBadge variant="neutral">På reservation</StatusBadge>
-          ) : o.status === "klar" ? (
-            <StatusBadge variant="groen">Klar til levering</StatusBadge>
-          ) : (
-            <StatusBadge variant="gul">Restordre</StatusBadge>
-          )}
-        </div>
-        <div className="flex items-baseline justify-between gap-2 pl-[1.125rem]">
-          <span className="min-w-0 truncate text-[length:var(--t-sec)] text-[var(--fg-2)]">
-            {dateShort(o.ordre_dato)}
-            {summaryLabel && ` · ${summaryLabel}`}
-          </span>
-          <span className="shrink-0 text-sm text-[var(--fg)] tabular-nums">
-            {kroner.format(o.total)}
-          </span>
-        </div>
-      </button>
+        </button>
+      </div>
       {o.note && (
-        <p className="text-[length:var(--t-sec)] pl-[1.125rem] text-[var(--fg-2)] italic">
+        <p className="text-[length:var(--t-sec)] pl-[1.75rem] text-[var(--fg-2)] italic">
           {o.note}
         </p>
       )}
       {o.oensketLevering && (
         <p
           className={cn(
-            "text-[length:var(--t-sec)] pl-[1.125rem]",
+            "text-[length:var(--t-sec)] pl-[1.75rem]",
             isPastDate(o.oensketLevering)
               ? "text-[var(--st-red-fg)] font-medium"
               : "text-[var(--fg-2)]",
@@ -903,6 +1198,38 @@ function OrderRow({
           Ønsket levering {formatWeekdayDate(o.oensketLevering)}
         </p>
       )}
+      {/* Brief 89 (28. sep 2026): eksisterende afventende kommentarer på
+          ordren. Vises som lille grøn stribe med hensigt + note + hvem
+          skrev den. */}
+      {kommentarer.map((k) => (
+        <div
+          key={k.id}
+          className="ml-[1.75rem] rounded-md border-l-2 border-[var(--st-green)] bg-[var(--surface-1)] px-3 py-2 text-[length:var(--t-sec)]"
+        >
+          <div className="flex items-baseline gap-2">
+            <span className="font-medium text-[var(--fg)]">
+              {HENSIGT_LABEL[k.hensigt]}
+            </span>
+            {k.aftaltDato && (
+              <span className="text-[var(--fg-2)]">
+                · {formatWeekdayDate(k.aftaltDato)}
+              </span>
+            )}
+          </div>
+          {k.note && (
+            <div className="mt-0.5">
+              <ExpandableNote
+                text={k.note}
+                clampLines={4}
+                className="text-[var(--fg-2)]"
+              />
+            </div>
+          )}
+          <p className="mt-0.5 text-[12px] text-[var(--fg-3)]">
+            {k.oprettetAfNavn ?? "(ukendt)"} · {dateShort(k.oprettet)}
+          </p>
+        </div>
+      ))}
       {open && hasLines && (
         <OrderLines lines={o.lines} tillaegOgAfgifter={o.tillaegOgAfgifter} />
       )}
@@ -936,35 +1263,159 @@ function OrderLines({
   const [showAll, setShowAll] = useState(false);
   const visibleLines = showAll ? lines : lines.slice(0, ORDER_LINE_LIMIT);
   const hidden = lines.length - visibleLines.length;
+  // §20 (29. sep 2026): sumrækken — tallene ingen kan regne i hovedet.
+  // Klar / Afventer / I alt. Reservation slås sammen med afventer
+  // (kunden venter stadig). Beløb regnes på synlige linjer, inklusive
+  // "Vis alle" — vi viser tallene for den fulde ordre uanset klipning.
+  const klarSum = lines
+    .filter((l) => l.kundeStatus === "klar")
+    .reduce((s, l) => s + l.ej_faktureret, 0);
+  const afventerSum = lines
+    .filter((l) => l.kundeStatus !== "klar")
+    .reduce((s, l) => s + l.ej_faktureret, 0);
+  const iAltSum = klarSum + afventerSum + Math.max(0, tillaegOgAfgifter);
+  // Index for den første klar-linje så vi kan lægge en skillelinje der.
+  // Kilden er sorteret: reservation → afventer → delvis → klar. Første
+  // "klar" markerer grænsen mellem afventende og afsendte varer.
+  const firstKlarIdx = visibleLines.findIndex((l) => l.kundeStatus === "klar");
   return (
-    <ul className="mt-1 flex flex-col gap-2 rounded-md bg-[var(--surface-1)] p-2">
-      {visibleLines.map((l) => (
-        <OrderLineRow key={l.linje_nr} line={l} />
-      ))}
-      {hidden > 0 && (
-        <li>
-          <button
-            type="button"
-            onClick={() => setShowAll(true)}
-            className="text-[length:var(--t-sec)] text-[var(--fg-2)] font-medium underline-offset-2 hover:underline"
-          >
-            Vis alle {lines.length} →
-          </button>
-        </li>
-      )}
-      {/* Brief 78 tillæg B §2 (22. sep 2026): tillæg og afgifter (Vej,
-          Energi, emb-afg) er poster på regningen, ikke varer der
-          afventer ankomst. Samlet som én linje nederst, adskilt fra
-          varelisten, så "I alt" stemmer. */}
-      {tillaegOgAfgifter > 0 && (
-        <li className="mt-1 flex items-baseline justify-between border-t border-[var(--line-2)] pt-2 text-[length:var(--t-meta)] text-[var(--fg-2)]">
-          <span>Tillæg og afgifter</span>
-          <span className="tabular-nums">
-            {kroner.format(tillaegOgAfgifter)}
-          </span>
-        </li>
-      )}
-    </ul>
+    <div className="mt-1 rounded-md bg-[var(--surface-1)] p-2">
+      {/* @[640px]+: tabel med fire kolonner. Tallene står under
+          hinanden, enheden i overskriften ikke i cellen. */}
+      <table className="hidden w-full text-sm @[640px]:table">
+        <thead>
+          <tr className="text-left text-[length:var(--t-meta)] font-medium text-[var(--fg-3)]">
+            <th className="pb-2 pr-3 font-medium">Vare</th>
+            <th className="pb-2 pr-3 text-right font-medium">Antal</th>
+            <th className="pb-2 pr-3 text-right font-medium">Beløb</th>
+            <th className="pb-2 text-right font-medium">Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {visibleLines.map((l, i) => {
+            const showDivider = i === firstKlarIdx && i > 0;
+            return (
+              <OrderLineTableRow
+                key={l.linje_nr}
+                line={l}
+                showDivider={showDivider}
+              />
+            );
+          })}
+          {/* Sumrække — det tal ingen kan regne i hovedet. */}
+          <tr className="border-t-2 border-[var(--line-2)]">
+            <td
+              className="pt-2 text-[length:var(--t-meta)] text-[var(--fg-2)]"
+              colSpan={2}
+            >
+              Klar {kroner.format(klarSum)} · Afventer{" "}
+              {kroner.format(afventerSum)}
+              {tillaegOgAfgifter > 0
+                ? ` · Tillæg ${kroner.format(tillaegOgAfgifter)}`
+                : ""}
+            </td>
+            <td className="pt-2 text-right text-[length:var(--t-meta)] text-[var(--fg-2)]">
+              I alt
+            </td>
+            <td className="pt-2 text-right font-medium tabular-nums text-[var(--fg)]">
+              {kroner.format(iAltSum)}
+            </td>
+          </tr>
+          {hidden > 0 && (
+            <tr>
+              <td colSpan={4} className="pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowAll(true)}
+                  className="text-[length:var(--t-sec)] font-medium text-[var(--fg-2)] underline-offset-2 hover:underline"
+                >
+                  Vis alle {lines.length} →
+                </button>
+              </td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+      {/* <1280 px: panelform. TableRow-mønstret siger tabellen er
+          kontorets; sælgeren står i en butik med telefonen. Beholder
+          den eksisterende to-linjers OrderLineRow. */}
+      <ul className="flex flex-col gap-2 @[640px]:hidden">
+        {visibleLines.map((l, i) => {
+          const showDivider = i === firstKlarIdx && i > 0;
+          return (
+            <OrderLineRow key={l.linje_nr} line={l} showDivider={showDivider} />
+          );
+        })}
+        {hidden > 0 && (
+          <li>
+            <button
+              type="button"
+              onClick={() => setShowAll(true)}
+              className="text-[length:var(--t-sec)] text-[var(--fg-2)] font-medium underline-offset-2 hover:underline"
+            >
+              Vis alle {lines.length} →
+            </button>
+          </li>
+        )}
+        {tillaegOgAfgifter > 0 && (
+          <li className="mt-1 flex items-baseline justify-between border-t border-[var(--line-2)] pt-2 text-[length:var(--t-meta)] text-[var(--fg-2)]">
+            <span>Tillæg og afgifter</span>
+            <span className="tabular-nums">
+              {kroner.format(tillaegOgAfgifter)}
+            </span>
+          </li>
+        )}
+      </ul>
+    </div>
+  );
+}
+
+/**
+ * §20 (29. sep 2026): tabel-versionen af ordrelinjen. Fire kolonner,
+ * højre-justerede tal, status som Meta ikke Badge. Skillelinje ved
+ * første klar-linje så afventende står øverst i deres egen blok.
+ */
+function OrderLineTableRow({
+  line: l,
+  showDivider,
+}: {
+  line: OpenOrderLine;
+  showDivider: boolean;
+}) {
+  const isDelvis = l.kundeStatus === "delvis";
+  const statusTekst =
+    l.kundeStatus === "reservation"
+      ? "på reservation"
+      : l.kundeStatus === "klar"
+        ? "klar"
+        : l.kundeStatus === "afventer"
+          ? "afventer ankomst"
+          : `${l.reserveret} klar, ${l.rest} mangler`;
+  return (
+    <tr className={showDivider ? "border-t border-[var(--line)]" : ""}>
+      <td className="max-w-0 truncate py-1.5 pr-3 text-[var(--fg)]">
+        {l.produktnavn}
+        {l.belobLabel && (
+          <span className="text-[var(--fg-3)]"> · {l.belobLabel}</span>
+        )}
+      </td>
+      <td className="py-1.5 pr-3 text-right tabular-nums text-[var(--fg)]">
+        {l.antal || ""}
+      </td>
+      <td className="py-1.5 pr-3 text-right tabular-nums text-[var(--fg)]">
+        {kroner.format(l.ej_faktureret)}
+      </td>
+      <td
+        className={cn(
+          "py-1.5 text-right text-[length:var(--t-meta)]",
+          isDelvis
+            ? "font-medium text-[var(--st-red-fg)]"
+            : "text-[var(--fg-2)]",
+        )}
+      >
+        {statusTekst}
+      </td>
+    </tr>
   );
 }
 
@@ -980,7 +1431,13 @@ function OrderLines({
  * Linje 2: antal · beløb · statustekst, adskilt med `·`, alt i fg-2/t-sec.
  * Statustekst kommer fra rest (kundens mangel), ikke lagerstatus.
  */
-function OrderLineRow({ line: l }: { line: OpenOrderLine }) {
+function OrderLineRow({
+  line: l,
+  showDivider,
+}: {
+  line: OpenOrderLine;
+  showDivider?: boolean;
+}) {
   // Brief 78 tillæg A §1 · rev. brief 75 tillæg G (22. sep 2026):
   //   - reservation (levering=5): "på reservation"
   //   - klar (reserveret ≥ antal): "klar"
@@ -996,7 +1453,12 @@ function OrderLineRow({ line: l }: { line: OpenOrderLine }) {
           ? "afventer ankomst"
           : `${l.reserveret} klar, ${l.rest} mangler`;
   return (
-    <li className="flex flex-col gap-0.5">
+    <li
+      className={cn(
+        "flex flex-col gap-0.5",
+        showDivider && "border-t border-[var(--line-2)] pt-2",
+      )}
+    >
       <span className="text-[length:var(--t-sec)] text-[var(--fg)] break-words">
         {l.produktnavn}
         {l.belobLabel && (
@@ -1050,6 +1512,18 @@ function OrderTotals({ totals }: { totals: OpenOrdersTotals }) {
           {kroner.format(totals.klar)}
         </span>
       </div>
+      {/* Brief 90 §4-opfølgning (29. sep 2026): MAV har egen linje.
+          Klar på lager, men afventer selskab — sælgeren ser hvilke af
+          kundens ordrer der venter på andre varer, når han står i
+          butikken. Kun synlig når > 0. */}
+      {totals.venterPaaAndre > 0 && (
+        <div className="flex items-baseline justify-between gap-3">
+          <span className="text-[var(--fg-2)]">Venter på andre varer</span>
+          <span className="font-medium text-[var(--fg)] tabular-nums">
+            {kroner.format(totals.venterPaaAndre)}
+          </span>
+        </div>
+      )}
       {totals.afventer > 0 && (
         <div className="flex items-baseline justify-between gap-3">
           <span className="text-[var(--fg-2)]">Afventer ankomst</span>
@@ -1112,6 +1586,8 @@ export function StamdataSection({
   const isLaptop = layout === "laptop";
   const [detaljerOpen, setDetaljerOpen] = useState(false);
   const [frekvensOpen, setFrekvensOpen] = useState(false);
+  const [saesonlukketOpen, setSaesonlukketOpen] = useState(false);
+  const [ringelisteLukOpen, setRingelisteLukOpen] = useState(false);
   const sellers = useSellerLookup();
   const intervals = useVisitIntervals();
   const { role, salesId: mySalesId } = useCurrentLagoRole();
@@ -1190,6 +1666,17 @@ export function StamdataSection({
             )}
             canEdit={canEditFrekvens}
             onEdit={() => setFrekvensOpen(true)}
+          />
+          <SaesonlukketRow
+            extension={extension}
+            canEdit={canEditFrekvens}
+            onEdit={() => setSaesonlukketOpen(true)}
+          />
+          <RingelisteLukRow
+            visitPriority={data.visitPriority}
+            extension={extension}
+            canEdit={canEditFrekvens}
+            onEdit={() => setRingelisteLukOpen(true)}
           />
         </dl>
         {!isLaptop && <div className="mt-3">{editButton}</div>}
@@ -1328,6 +1815,30 @@ export function StamdataSection({
           currentSalesId={mySalesId}
         />
       )}
+
+      {canEditFrekvens && (
+        <SaesonlukketDialog
+          open={saesonlukketOpen}
+          onOpenChange={setSaesonlukketOpen}
+          companyId={company.id}
+          companyName={company.name}
+          initial={{
+            saesonlukket_fra: extension?.saesonlukket_fra ?? null,
+            saesonlukket_til: extension?.saesonlukket_til ?? null,
+          }}
+        />
+      )}
+
+      {canEditFrekvens && (
+        <RingelisteLukDialog
+          open={ringelisteLukOpen}
+          onOpenChange={setRingelisteLukOpen}
+          companyId={company.id}
+          companyName={company.name}
+          lastVisitAtVedLukning={extension?.last_visit_at ?? null}
+          daysOverdueVedLukning={data.visitPriority?.days_overdue ?? null}
+        />
+      )}
     </>
   );
 }
@@ -1418,6 +1929,145 @@ function BesoegsfrekvensRow({
           »{note}«
         </p>
       )}
+    </div>
+  );
+}
+
+/**
+ * Brief 90 §3 (28. sep 2026): sæsonlukket-periode-rækken. Én linje der
+ * viser om kunden er i vinduet nu ("Sæsonlukket til 1. marts"), venter
+ * på et fremtidigt vindue ("Sæsonlukket fra … til …"), eller ikke er
+ * sat op. Blyanten åbner SaesonlukketDialog. Uret røres ikke — det er
+ * dialogens ansvar at holde last_visit_at urørt.
+ */
+function SaesonlukketRow({
+  extension,
+  canEdit,
+  onEdit,
+}: {
+  extension: LagoCustomerData["extension"];
+  canEdit: boolean;
+  onEdit: () => void;
+}) {
+  const fra = extension?.saesonlukket_fra ?? null;
+  const til = extension?.saesonlukket_til ?? null;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const isSet = !!fra && !!til;
+  const fraDate = fra ? new Date(fra) : null;
+  const tilDate = til ? new Date(til) : null;
+  const inWindow = isSet && fraDate! <= today && today <= tilDate!;
+  const future = isSet && fraDate! > today;
+  const past = isSet && tilDate! < today;
+
+  let mainText: string;
+  let subText: string | null;
+  if (!isSet) {
+    mainText = "Ikke sat";
+    subText = null;
+  } else if (inWindow) {
+    mainText = `Sæsonlukket til ${formatShortDate(til)}`;
+    subText = "Åbner sig automatisk";
+  } else if (future) {
+    mainText = `Sæsonlukker ${formatShortDate(fra)}`;
+    subText = `Til ${formatShortDate(til)}`;
+  } else if (past) {
+    // Historisk periode — ligger stadig i databasen men gør intet
+    // (view'et ser CURRENT_DATE > til). Vises som "sidste periode:"
+    // så den kan ryddes hvis nogen synes den støjer.
+    mainText = "Ikke sat";
+    subText = `Sidste periode: ${formatShortDate(fra)} – ${formatShortDate(til)}`;
+  } else {
+    mainText = "Ikke sat";
+    subText = null;
+  }
+
+  return (
+    <div className="flex flex-col gap-1 border-t border-[var(--line)] py-2 first:border-t-0">
+      <div className="flex items-baseline justify-between gap-3">
+        <dt className="text-[length:var(--t-sec)] text-[var(--fg-2)]">
+          Sæsonlukket
+        </dt>
+        <dd className="flex items-baseline gap-2 text-right">
+          <span
+            className={
+              inWindow
+                ? "text-sm font-medium text-[var(--fg)]"
+                : "text-sm text-[var(--fg)]"
+            }
+          >
+            {mainText}
+          </span>
+          {subText && (
+            <span className="text-[length:var(--t-sec)] text-[var(--fg-2)]">
+              · {subText}
+            </span>
+          )}
+          {canEdit && (
+            <button
+              type="button"
+              onClick={onEdit}
+              aria-label="Redigér sæsonlukket-periode"
+              className="ml-1 rounded p-1 text-[var(--fg-2)] hover:bg-[var(--bg-2)] hover:text-[var(--fg)]"
+            >
+              <Icon icon={Pencil} className="h-3.5 w-3.5" />
+            </button>
+          )}
+        </dd>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Brief 90 §2 (28. sep 2026): "Luk fra ringelisten"-rækken. Vises kun
+ * for kunder der ER på ringelisten lige nu — dvs. overdue eller
+ * never_visited, days_overdue ≥ 14, next_visit_planned mangler.
+ * Kontoret må ringe; ejerskabet bliver hos sælgeren. Uden ringeliste-
+ * kvalifikation vises rækken slet ikke — for at spare kortet for støj.
+ */
+function RingelisteLukRow({
+  visitPriority,
+  extension,
+  canEdit,
+  onEdit,
+}: {
+  visitPriority: LagoCustomerData["visitPriority"];
+  extension: LagoCustomerData["extension"];
+  canEdit: boolean;
+  onEdit: () => void;
+}) {
+  const status = visitPriority?.status ?? null;
+  const daysOverdue = visitPriority?.days_overdue ?? 0;
+  const nextVisitPlanned = extension?.next_visit_planned ?? null;
+  // Rammer ringelistens filter?
+  const onList =
+    !nextVisitPlanned &&
+    (status === "never_visited" || (status === "overdue" && daysOverdue >= 14));
+  if (!onList) return null;
+  return (
+    <div className="flex flex-col gap-1 border-t border-[var(--line)] py-2 first:border-t-0">
+      <div className="flex items-baseline justify-between gap-3">
+        <dt className="text-[length:var(--t-sec)] text-[var(--fg-2)]">
+          Ringelisten
+        </dt>
+        <dd className="flex items-baseline gap-2 text-right">
+          <span className="text-sm text-[var(--fg)]">
+            {status === "never_visited"
+              ? "Aldrig besøgt"
+              : `${daysOverdue} dage over`}
+          </span>
+          {canEdit && (
+            <button
+              type="button"
+              onClick={onEdit}
+              className="ml-1 rounded px-2 py-0.5 text-[length:var(--t-sec)] font-medium text-[var(--fg-2)] underline-offset-2 hover:bg-[var(--bg-2)] hover:text-[var(--fg)] hover:underline"
+            >
+              Luk fra listen
+            </button>
+          )}
+        </dd>
+      </div>
     </div>
   );
 }

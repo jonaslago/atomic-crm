@@ -3,10 +3,11 @@ import { ErrorBoundary } from "react-error-boundary";
 import { Skeleton } from "@/components/ui/skeleton";
 
 import { useCurrentLagoRole } from "@/lago/auth/useCurrentLagoRole";
+import { usePortefolje } from "@/lago/portefolje/PortefoljeContext";
 import { cn } from "@/lib/utils";
 
+import { DashboardActionBar } from "./DashboardActionBar";
 import { ROLE_LAYOUTS } from "./roleLayouts";
-import { SectionNumberContext } from "./sectionNumberContext";
 import { WidgetShell } from "./WidgetShell";
 
 // Brief 81 bølge 2 (23. sep 2026) · build-marker der garanterer at
@@ -58,7 +59,13 @@ const WIDTH_CLASS: Record<WidgetWidth, string> = {
 };
 
 export function DashboardGrid() {
-  const { role, isLoading } = useCurrentLagoRole();
+  // Brief 84 tillæg A §3 (28. sep 2026): viewRole styrer layoutet.
+  // Under "Se som rolle" er det den valgte rolle; under dækning er
+  // det den passede persons rolle; ellers brugerens egen. Loading-
+  // tilstanden læses fortsat fra useCurrentLagoRole så første render
+  // ikke tegner "ingen widgets" mens rollen hentes.
+  const { isLoading } = useCurrentLagoRole();
+  const { viewRole: role } = usePortefolje();
 
   if (isLoading) {
     return (
@@ -71,20 +78,26 @@ export function DashboardGrid() {
   }
 
   const ids = ROLE_LAYOUTS[role] ?? [];
-  const numbered = role === "saelger";
 
-  if (role === "saelger") {
-    // Første tre sektioner i hovedspalten, resten (typisk sektion 4)
-    // i skinnen. Hver spalte er sin egen flex-col så en tom sektion i
-    // hovedspalten skubber blot den næste op — den tvinger ikke
-    // skinnens højde.
+  // Brief 90 §6 (28. sep 2026): kontor + admin får samme to-beholder-
+  // model som sælger. Det løser brief 82 §1's 600 px ingenting-problem:
+  // rækkehøjder bestemmes uafhængigt i hver kolonne, så en høj main-
+  // widget ikke længere trækker rail-cellerne op i tomrum.
+  // Ledelse bevarer én-kolonne-model — alle deres widgets er "full"
+  // og skal stå stablet.
+  const twoContainerRole =
+    role === "saelger" || role === "kontor" || role === "admin";
+
+  if (twoContainerRole) {
+    // Split-position: 3 for alle roller. Kontor og admin får taellerraekke
+    // + ordrekommentarer + kan_sendes i hovedspalten, resten i skinnen.
+    // Sælger bevarer sit 3/rest-mønster fra brief 87 §4.
     const mainIds = ids.slice(0, 3);
     const railIds = ids.slice(3);
-    const renderSection = (id: string, index: number) => {
+    const renderSection = (id: string) => {
       const def = WIDGETS[id];
       if (!def) return null;
       const WidgetComponent = def.component;
-      const sectionNumber = numbered ? index + 1 : undefined;
       return (
         <div key={id} className="min-w-0">
           <ErrorBoundary
@@ -93,14 +106,12 @@ export function DashboardGrid() {
                 title={def.title}
                 subtitle={def.subtitle}
                 seeAllHref={def.seeAllHref}
+                seeAllLabel={def.seeAllLabel}
                 error={error as Error}
-                sectionNumber={sectionNumber}
               />
             )}
           >
-            <SectionNumberContext.Provider value={sectionNumber}>
-              <WidgetComponent />
-            </SectionNumberContext.Provider>
+            <WidgetComponent />
           </ErrorBoundary>
         </div>
       );
@@ -113,10 +124,13 @@ export function DashboardGrid() {
             luft på mobil før noget stod. */}
         <div className="grid grid-cols-1 gap-x-8 gap-y-6 @[768px]:gap-y-10 @[1280px]:grid-cols-12 @[1280px]:items-start">
           <div className="flex flex-col gap-6 @[768px]:gap-10 @[1280px]:col-span-8">
-            {mainIds.map((id, i) => renderSection(id, i))}
+            {mainIds.map((id) => renderSection(id))}
           </div>
           <div className="flex flex-col gap-6 @[768px]:gap-10 @[1280px]:col-span-4">
-            {railIds.map((id, i) => renderSection(id, i + mainIds.length))}
+            {/* §25 (30. sep 2026): action bar above all rail widgets,
+                all roles. Not a widget — just the buttons. */}
+            <DashboardActionBar />
+            {railIds.map((id) => renderSection(id))}
           </div>
         </div>
       </div>
@@ -125,6 +139,10 @@ export function DashboardGrid() {
 
   return (
     <div className="@container" data-build={DASHBOARD_BUILD_MARKER}>
+      {/* §25 (30. sep 2026): action bar for single-column layouts too. */}
+      <div className="mb-6 @[768px]:mb-10">
+        <DashboardActionBar />
+      </div>
       <div
         className={cn(
           // Brief 81 §2 (23. sep 2026): 24 px under 768, 40 px derover.
@@ -133,11 +151,10 @@ export function DashboardGrid() {
           "@[1280px]:grid-cols-3",
         )}
       >
-        {ids.map((id, index) => {
+        {ids.map((id) => {
           const def = WIDGETS[id];
           if (!def) return null;
           const WidgetComponent = def.component;
-          const sectionNumber = numbered ? index + 1 : undefined;
           return (
             <div key={id} className={cn("min-w-0", WIDTH_CLASS[def.width])}>
               <ErrorBoundary
@@ -146,14 +163,12 @@ export function DashboardGrid() {
                     title={def.title}
                     subtitle={def.subtitle}
                     seeAllHref={def.seeAllHref}
+                    seeAllLabel={def.seeAllLabel}
                     error={error as Error}
-                    sectionNumber={sectionNumber}
                   />
                 )}
               >
-                <SectionNumberContext.Provider value={sectionNumber}>
-                  <WidgetComponent />
-                </SectionNumberContext.Provider>
+                <WidgetComponent />
               </ErrorBoundary>
             </div>
           );

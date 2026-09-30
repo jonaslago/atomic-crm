@@ -59,7 +59,17 @@ type SortMode = "name" | "priority" | "last_visit";
 // er også med, "de skal jo afklares". Regel: (overdue AND days_overdue>=5)
 // eller never_visited, AND next_visit_planned IS NULL. Målt før udrulning:
 // 152 kunder (113 overdue ≥5 + 39 never_visited).
-type VisitStatusFilter = "any" | "ringeliste" | "overdue" | "soon" | "on_plan";
+// Brief 85 §8 (28. sep 2026): "no_urgency" fik en linje. De 89 X/L-
+// kunder har en status — den hedder no_urgency i priority-viewet — men
+// skinnen havde ingen række for dem, så 156+1+14=171 stemte ikke med
+// "Alle statuser 260". Nu summer de fem underlinjer til totalen.
+type VisitStatusFilter =
+  | "any"
+  | "ringeliste"
+  | "overdue"
+  | "soon"
+  | "on_plan"
+  | "no_urgency";
 
 // Brief 65 tillæg A §1 (18. sep 2026): segment-tooltip siger IKKE
 // intervallet. Intervallet er nu en pr-kunde-værdi (kan overstyres),
@@ -77,6 +87,23 @@ const SEGMENT_HINT: Record<Segment, string> = {
 
 interface EnrichedRow extends CustomerListRow {
   priority: VisitPriority;
+}
+
+/**
+ * §22 opfølgning (29. sep 2026): en plan er kun aktiv, hvis datoen er
+ * i dag eller senere. En fortidig plan er et hul — kunden fik ikke
+ * ryddet feltet efter besøget. Se `dashboard_ringeliste_lago` og
+ * triggeren `trg_clear_next_visit_on_besoeg`. Sammenligning på dato,
+ * ikke tidspunkt (kl. 09:00 i dag ≠ fortid).
+ */
+function hasActivePlan(iso: string | null | undefined): boolean {
+  if (!iso) return false;
+  const planDate = new Date(iso);
+  if (Number.isNaN(planDate.getTime())) return false;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  planDate.setHours(0, 0, 0, 0);
+  return planDate.getTime() >= today.getTime();
 }
 
 function statusDotClass(status: VisitStatus): string {
@@ -300,7 +327,9 @@ function summariseActiveFilters({
           ? "Overskredet"
           : selectedVisitStatus === "soon"
             ? "Trænger snart"
-            : "Ajour",
+            : selectedVisitStatus === "on_plan"
+              ? "Ajour"
+              : "Uklassificeret",
     );
   }
   if (selectedDistrikter.size > 0) {
@@ -461,7 +490,7 @@ function CustomerRow({
           "border-b border-[var(--line)] transition-colors",
           "hover:bg-[var(--surface-2)]",
           selected && "bg-[var(--surface-3)] hover:bg-[var(--surface-3)]",
-          "grid-cols-[minmax(160px,1.6fr)_90px_72px_65px_100px_95px]",
+          "grid-cols-[minmax(160px,1.6fr)_90px_72px_65px_100px_95px_28px]",
         )}
       >
         <span className="flex items-center gap-2 min-w-0">
@@ -475,14 +504,6 @@ function CustomerRow({
           <span className="truncate text-sm font-medium text-[var(--fg)]">
             {name}
           </span>
-          {row.next_planned_at && (
-            <Icon
-              icon={CalendarClock}
-              size="sm"
-              className="shrink-0 text-[var(--ink)]"
-              aria-label="Planlagt aftale"
-            />
-          )}
         </span>
         <span className="truncate text-sm text-[var(--fg-2)]">
           {city || "—"}
@@ -506,6 +527,18 @@ function CustomerRow({
         >
           {daysCellText(row)}
         </span>
+        {/* §26 (30. sep 2026): planned-visit icon in its own column so it
+            doesn't push the customer name. Centered, empty when no plan. */}
+        <span className="flex items-center justify-center">
+          {row.next_planned_at && (
+            <Icon
+              icon={CalendarClock}
+              size="sm"
+              className="text-[var(--ink)]"
+              aria-label="Planlagt aftale"
+            />
+          )}
+        </span>
       </div>
     </button>
   );
@@ -527,7 +560,7 @@ function CustomerRowHeader() {
         // gav ikke luft nok — uden truncate løb "SEGMENT" ind i
         // "DISTRIKT" og videre. truncate på hver celle sikrer at ingen
         // ord kan slippe ud af sin egen kolonne uanset bredde.
-        "grid-cols-[minmax(160px,1.6fr)_90px_72px_65px_100px_95px]",
+        "grid-cols-[minmax(160px,1.6fr)_90px_72px_65px_100px_95px_28px]",
       )}
     >
       <span className="truncate">Kundenavn</span>
@@ -536,6 +569,8 @@ function CustomerRowHeader() {
       <span className="truncate">Distrikt</span>
       <span className="truncate">Sælger</span>
       <span className="truncate text-right">Sidste besøg</span>
+      {/* §26: no header for the planned-visit icon column. */}
+      <span />
     </div>
   );
 }
@@ -617,10 +652,14 @@ function FilterSidebar(props: FilterSidebarProps) {
           checked={props.showInactive}
           onChange={props.onShowInactiveChange}
         />
+        {/* §17 (29. sep 2026): når segment L har 0 kunder, deaktivér
+            toggle'en og vis tallet direkte. En kontakt, der ikke kan
+            gøre noget, skal sige det. */}
         <ToggleRow
-          label="Vis leads (segment L)"
+          label={`Vis leads (segment L) · ${props.segmentCounts.L}`}
           checked={props.showLeads}
           onChange={props.onShowLeadsChange}
+          disabled={props.segmentCounts.L === 0}
         />
       </FilterGroup>
       <FilterGroup label="Segment">
@@ -632,7 +671,10 @@ function FilterSidebar(props: FilterSidebarProps) {
           onSelect={(v) => props.onSelectSegment(v as Segment | "all")}
           count={props.segmentCounts.all}
         />
-        {(["A", "B", "C", "X"] as const).map((s) => (
+        {/* §17 (29. sep 2026): Segment L står i listen med sit tal, som
+            de fire andre. I dag var der ingen vej til kun at se leads,
+            selv når der er nogen. */}
+        {(["A", "B", "C", "X", "L"] as const).map((s) => (
           <RadioRow
             key={s}
             name="segment"
@@ -653,18 +695,10 @@ function FilterSidebar(props: FilterSidebarProps) {
           onSelect={(v) => props.onSelectVisitStatus(v as VisitStatusFilter)}
           count={props.visitStatusCounts.any}
         />
-        {/* Brief 83 tillæg A (24. sep 2026): handlingsliste — dem der
-            skal ringes op nu. Overdue >=5 dage eller aldrig besøgt,
-            uden planlagt aftale. Erstatter forsidens ringeliste-widget. */}
-        <RadioRow
-          name="visitStatus"
-          label="Ringeliste"
-          value="ringeliste"
-          selected={props.selectedVisitStatus}
-          onSelect={(v) => props.onSelectVisitStatus(v as VisitStatusFilter)}
-          count={props.visitStatusCounts.ringeliste}
-          countTone="red"
-        />
+        {/* §22 opfølgning (29. sep 2026): Overskredet står FØR Ringeliste
+            — delmængden hører under helheden. Underteksterne bruger
+            "uanset hvor længe" og "mere end 14 dage" som kontrast, så
+            forskellen læses ved siden af hinanden. */}
         <RadioRow
           name="visitStatus"
           label="Overskredet interval"
@@ -673,6 +707,17 @@ function FilterSidebar(props: FilterSidebarProps) {
           onSelect={(v) => props.onSelectVisitStatus(v as VisitStatusFilter)}
           count={props.visitStatusCounts.overdue}
           countTone="red"
+          hint="Over besøgsintervallet — uanset hvor længe. Sælgerens egen liste."
+        />
+        <RadioRow
+          name="visitStatus"
+          label="Ringeliste"
+          value="ringeliste"
+          selected={props.selectedVisitStatus}
+          onSelect={(v) => props.onSelectVisitStatus(v as VisitStatusFilter)}
+          count={props.visitStatusCounts.ringeliste}
+          countTone="red"
+          hint="Mere end 14 dage over, eller aldrig besøgt, og uden en aktuel plan. Kontoret må ringe."
         />
         <RadioRow
           name="visitStatus"
@@ -691,6 +736,11 @@ function FilterSidebar(props: FilterSidebarProps) {
           onSelect={(v) => props.onSelectVisitStatus(v as VisitStatusFilter)}
           count={props.visitStatusCounts.on_plan}
         />
+        {/* §22 (29. sep 2026): "Uklassificeret 89" fjernet — samme mængde
+            som Segment X 89 ovenfor. To filtre for samme kunder er en
+            løgn om at der er to måder at nå tallet på. Segmentet er den
+            mere præcise akse; besøgsstatus-udtrykket var et biprodukt.
+            Målt: no_urgency = segment X = segment X ∩ no_urgency = 89. */}
       </FilterGroup>
       {props.distrikter.size > 0 && (
         <FilterGroup label="Distrikt">
@@ -852,7 +902,13 @@ export function LagoCustomerList() {
       if (!raw) return "any";
       const parsed = JSON.parse(raw) as { priority_status?: string };
       const v = parsed?.priority_status;
-      if (v === "overdue" || v === "soon" || v === "on_plan") return v;
+      if (
+        v === "overdue" ||
+        v === "soon" ||
+        v === "on_plan" ||
+        v === "no_urgency"
+      )
+        return v;
       return "any";
     } catch {
       return "any";
@@ -950,12 +1006,12 @@ export function LagoCustomerList() {
       if (selectedVisitStatus !== "any") {
         const s = r.priority.status;
         if (selectedVisitStatus === "ringeliste") {
-          // Brief 83 tillæg A: (overdue AND days_overdue>=5) eller
-          // never_visited, alle med next_visit_planned IS NULL.
-          if (r.extension?.next_visit_planned) return false;
+          // §22 opfølgning (29. sep 2026): fortidig plan tæller ikke,
+          // og tærsklen er 14 dg. Samme regel som RPC + filter-prædikatet.
+          if (hasActivePlan(r.extension?.next_visit_planned)) return false;
           if (s === "never_visited") {
             /* passer */
-          } else if (s === "overdue" && (r.priority.daysOverdue ?? 0) >= 5) {
+          } else if (s === "overdue" && (r.priority.daysOverdue ?? 0) >= 14) {
             /* passer */
           } else return false;
         } else if (selectedVisitStatus === "overdue") {
@@ -964,6 +1020,8 @@ export function LagoCustomerList() {
           if (s !== "soon") return false;
         } else if (selectedVisitStatus === "on_plan") {
           if (s !== "on_plan") return false;
+        } else if (selectedVisitStatus === "no_urgency") {
+          if (s !== "no_urgency") return false;
         }
       }
       // Brief 58 §2b (17. sep 2026): branche-filter.
@@ -1083,10 +1141,13 @@ export function LagoCustomerList() {
       if (opts.visitStatus !== "any") {
         const s = r.priority.status;
         if (opts.visitStatus === "ringeliste") {
-          if (r.extension?.next_visit_planned) return false;
+          // §18 + §22 opfølgning (29. sep 2026): tærskel 14 dg + fortidig
+          // plan tæller ikke. Samme regel som RPC. hasActivePlan caster
+          // til dato ét sted — ingen tidspunkter i sammenligningen.
+          if (hasActivePlan(r.extension?.next_visit_planned)) return false;
           if (s === "never_visited") {
             /* passer */
-          } else if (s === "overdue" && (r.priority.daysOverdue ?? 0) >= 5) {
+          } else if (s === "overdue" && (r.priority.daysOverdue ?? 0) >= 14) {
             /* passer */
           } else return false;
         } else if (opts.visitStatus === "overdue") {
@@ -1095,6 +1156,8 @@ export function LagoCustomerList() {
           if (s !== "soon") return false;
         } else if (opts.visitStatus === "on_plan") {
           if (s !== "on_plan") return false;
+        } else if (opts.visitStatus === "no_urgency") {
+          if (s !== "no_urgency") return false;
         }
       }
       if (opts.brancheKoder.size > 0 || opts.brancheNone) {
@@ -1150,6 +1213,7 @@ export function LagoCustomerList() {
       overdue: 0,
       soon: 0,
       on_plan: 0,
+      no_urgency: 0,
     };
     for (const r of forVisitStatus) {
       const status = r.priority.status;
@@ -1157,13 +1221,19 @@ export function LagoCustomerList() {
         visitStatus.overdue++;
       else if (status === "soon") visitStatus.soon++;
       else if (status === "on_plan") visitStatus.on_plan++;
+      // Brief 85 §8 (28. sep 2026): "uklassificeret" som egen tælling.
+      // De 89 X/L-kunder har status no_urgency i priority-viewet — vis
+      // dem, så overdue+soon+on_plan+no_urgency summer til any.
+      else if (status === "no_urgency") visitStatus.no_urgency++;
       // Brief 83 tillæg A: ringeliste-tælling er en delmængde af
       // overdue+never_visited og skal beregnes separat med samme regel
       // som filter-prædikatet.
+      // §18 + §22 opfølgning (29. sep 2026): 14 dg + fortidig plan
+      // tæller ikke — samme regel som filter-prædikatet + RPC.
       const isRingeliste =
-        !r.extension?.next_visit_planned &&
+        !hasActivePlan(r.extension?.next_visit_planned) &&
         (status === "never_visited" ||
-          (status === "overdue" && (r.priority.daysOverdue ?? 0) >= 5));
+          (status === "overdue" && (r.priority.daysOverdue ?? 0) >= 14));
       if (isRingeliste) visitStatus.ringeliste++;
     }
 
