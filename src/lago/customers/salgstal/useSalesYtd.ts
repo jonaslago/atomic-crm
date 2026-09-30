@@ -48,42 +48,29 @@ async function fetchSalesYtd(vismaCustomerNo: string): Promise<SalesYtd> {
   const throughMonth = now.getMonth() + 1;
   const lastYear = currentYear - 1;
 
-  // Hent ÅTD-relevante rækker for begge år i én query. Alle salgstyper
-  // (FRIFLM, PRØVE, FRIFL, PROMO) er allerede aggregeret pr. måned;
-  // vi summerer belob uanset type — PRØVE er 0 kr. og påvirker ikke.
-  const [ytdRes, historyRes] = await Promise.all([
-    supabase
-      .from("sales_monthly_lago")
-      .select("aar, maaned, belob")
-      .eq("visma_customer_no", vismaCustomerNo)
-      .in("aar", [currentYear, lastYear])
-      .lte("maaned", throughMonth),
-    // Én head-query for at afgøre om kunden overhovedet har historik.
-    // Skiller "ingen omsætning nogensinde" (23 af 257 kunder pr. dagens
-    // data) fra "ingen omsætning i ÅTD men aktivitet før".
-    supabase
-      .from("sales_monthly_lago")
-      .select("visma_customer_no", { head: true, count: "exact" })
-      .eq("visma_customer_no", vismaCustomerNo),
-  ]);
-  if (ytdRes.error) throw ytdRes.error;
-  if (historyRes.error) throw historyRes.error;
+  // §28a (30. sep 2026): server-side aggregation via RPC. The old
+  // client-side approach fetched up to 1.022 rows per customer and hit
+  // PostgREST's 1.000-row limit — Dalum lost 38.644 kr. silently.
+  // The RPC returns three numbers in one call, no row limit.
+  const { data, error } = await supabase.rpc("sales_ytd_for_customer", {
+    p_customer_no: vismaCustomerNo,
+    p_current_year: currentYear,
+    p_last_year: lastYear,
+    p_through_month: throughMonth,
+  });
+  if (error) throw error;
 
-  let ytdThisYear = 0;
-  let ytdLastYear = 0;
-  for (const r of (ytdRes.data ?? []) as Array<{
-    aar: number;
-    maaned: number;
-    belob: number | string;
-  }>) {
-    const belob = Number(r.belob) || 0;
-    if (r.aar === currentYear) ytdThisYear += belob;
-    else if (r.aar === lastYear) ytdLastYear += belob;
-  }
+  const result = data as {
+    ytd_this_year: number;
+    ytd_last_year: number;
+    has_any_history: boolean;
+  };
+  const ytdThisYear = Number(result.ytd_this_year) || 0;
+  const ytdLastYear = Number(result.ytd_last_year) || 0;
 
   const growthKr = ytdThisYear - ytdLastYear;
   const growthPct = ytdLastYear > 0 ? growthKr / ytdLastYear : null;
-  const hasAnyHistoricRevenue = (historyRes.count ?? 0) > 0;
+  const hasAnyHistoricRevenue = result.has_any_history;
 
   let kind: SalesYtdKind;
   if (!hasAnyHistoricRevenue) {
