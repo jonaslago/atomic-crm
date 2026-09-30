@@ -61,7 +61,6 @@ import {
   useOpenOrders,
   type OpenOrderLine,
   type OpenOrderSummary,
-  type OpenOrdersTotals,
 } from "./useOpenOrders";
 
 /**
@@ -917,6 +916,23 @@ export function OmsaetningSection({
 // 7. Åbne ordrer
 // ------------------------------------------------------------------
 
+// §29a: order bucket types and classification — module-level so they
+// don't trigger useMemo dependency warnings.
+type BucketKey = "afventer" | "reservation" | "mav" | "klar";
+const BUCKET_ORDER: BucketKey[] = ["klar", "mav", "afventer", "reservation"];
+const BUCKET_LABEL: Record<BucketKey, string> = {
+  klar: "Klar til levering",
+  mav: "Venter på andre varer",
+  afventer: "Afventer ankomst",
+  reservation: "På reservation",
+};
+function bucketFor(o: OpenOrderSummary): BucketKey {
+  if (o.status === "restordre") return "afventer";
+  if (o.status === "reservation") return "reservation";
+  if (o.isMav) return "mav";
+  return "klar";
+}
+
 export function AabneOrdrerSection({
   extension,
   companyId,
@@ -931,13 +947,6 @@ export function AabneOrdrerSection({
   const isLaptop = layout === "laptop";
   const query = useOpenOrders(extension?.visma_customer_no ?? null);
   const orders: OpenOrderSummary[] = query.data?.orders ?? [];
-  const totals = query.data?.totals ?? {
-    klar: 0,
-    afventer: 0,
-    enPrimeur: 0,
-    paaReservation: 0,
-    iAlt: 0,
-  };
   // Brief 89 (28. sep 2026): hent kommentarer på kundens ordrer så vi
   // kan vise dem under hver række og undgå dobbelt-kommentar.
   const kommentarerQuery = useQuery({
@@ -1006,27 +1015,88 @@ export function AabneOrdrerSection({
     });
   };
   const [dialogOpen, setDialogOpen] = useState(false);
-  // Brief 75 tillæg E (22. sep 2026): tavs top-5 var farlig. Overskriften
-  // siger "12 aktive" og totalen dækker 12, men listen viste 5 uden
-  // markering — sælgeren kunne ikke se hvor de andre 7 var. 19 kunder
-  // har > 5 åbne ordrer (max 16 hos Prebens). Vis "Vis alle N →" når
-  // grænsen skjuler ordrer, ellers ikke.
-  const [showAllOrders, setShowAllOrders] = useState(false);
-  // Brief 90 opfølgning (29. sep 2026): klip kun når der er MERE end
-  // 2 skjulte. Et link for at afsløre én ordre er ikke besværet værd
-  // — vis dem alle når hiddenIfClipped ≤ 2. Klippet gælder først når
-  // orders.length overstiger ORDER_LIMIT + 2 = 7.
-  const hiddenIfClipped = Math.max(0, orders.length - ORDER_LIMIT);
-  const shouldClip = !showAllOrders && hiddenIfClipped > 2;
-  const visibleOrders = shouldClip ? orders.slice(0, ORDER_LIMIT) : orders;
-  const hiddenOrders = orders.length - visibleOrders.length;
+
+  const buckets = useMemo(() => {
+    const map = new Map<BucketKey, OpenOrderSummary[]>();
+    for (const o of orders) {
+      const key = bucketFor(o);
+      const arr = map.get(key) ?? [];
+      arr.push(o);
+      map.set(key, arr);
+    }
+    return map;
+  }, [orders]);
+
+  // §29d: "Klar til levering" open by default, rest closed.
+  // Session-state per customer for group expansion.
+  const groupStorageKey = `lago-ordre-groups-${companyId}`;
+  const [expandedGroups, setExpandedGroups] = useState<Set<BucketKey>>(() => {
+    try {
+      const raw = sessionStorage.getItem(groupStorageKey);
+      if (raw) return new Set(JSON.parse(raw) as BucketKey[]);
+    } catch {
+      /* ignore */
+    }
+    return new Set<BucketKey>(["klar"]);
+  });
+  const persistGroups = (next: Set<BucketKey>) => {
+    setExpandedGroups(next);
+    try {
+      sessionStorage.setItem(groupStorageKey, JSON.stringify([...next]));
+    } catch {
+      /* ignore */
+    }
+  };
+  const toggleGroup = (key: BucketKey) => {
+    const next = new Set(expandedGroups);
+    if (next.has(key)) next.delete(key);
+    else next.add(key);
+    persistGroups(next);
+  };
+
+  // §29d: fold all — expands/collapses all groups AND orders.
+  const allGroupsExpanded = BUCKET_ORDER.every(
+    (k) => !buckets.has(k) || expandedGroups.has(k),
+  );
+  const toggleAll = () => {
+    if (allGroupsExpanded && allExpanded) {
+      persistGroups(new Set(["klar"]));
+      persistExpanded(new Set());
+    } else {
+      persistGroups(new Set(BUCKET_ORDER));
+      persistExpanded(new Set(orders.map((o) => o.ordre_nr)));
+    }
+  };
+
+  // §29e: group selection — clicking a group toggles all orders in it.
+  const toggleGroupSelection = (key: BucketKey) => {
+    const groupOrders = buckets.get(key) ?? [];
+    const groupNrs = groupOrders.map((o) => o.ordre_nr);
+    const allSelected = groupNrs.every((nr) => selected.has(nr));
+    setSelected((prev) => {
+      const next = new Set(prev);
+      for (const nr of groupNrs) {
+        if (allSelected) next.delete(nr);
+        else next.add(nr);
+      }
+      return next;
+    });
+  };
+
+  const totalBelob = orders.reduce((s, o) => s + o.total, 0);
+
   return (
     <Section variant={isLaptop ? "panel" : "divider"}>
+      {/* §29c: header shows total count + amount. */}
       {isLaptop ? (
         <SectionHeader
           variant="label"
           title="Åbne ordrer"
-          subtitle={orders.length > 0 ? `${orders.length} aktive` : undefined}
+          subtitle={
+            orders.length > 0
+              ? `${orders.length} aktive · ${kroner.format(totalBelob)}`
+              : undefined
+          }
           right={
             orders.length > 1 ? (
               <button
@@ -1034,7 +1104,9 @@ export function AabneOrdrerSection({
                 onClick={toggleAll}
                 className="text-[length:var(--t-meta)] font-medium text-[var(--fg-2)] hover:text-[var(--fg)] underline-offset-2 hover:underline"
               >
-                {allExpanded ? "Fold alle sammen" : "Fold alle ud"}
+                {allGroupsExpanded && allExpanded
+                  ? "Fold alle sammen"
+                  : "Fold alle ud"}
               </button>
             ) : undefined
           }
@@ -1044,14 +1116,18 @@ export function AabneOrdrerSection({
           title="Åbne ordrer"
           right={
             <span className="flex items-center gap-3">
-              {orders.length > 0 && <Meta>{orders.length} aktive</Meta>}
+              {orders.length > 0 && (
+                <Meta>
+                  {orders.length} aktive · {kroner.format(totalBelob)}
+                </Meta>
+              )}
               {orders.length > 1 && (
                 <button
                   type="button"
                   onClick={toggleAll}
                   className="text-[length:var(--t-meta)] font-medium text-[var(--fg-2)] hover:text-[var(--fg)] underline-offset-2 hover:underline"
                 >
-                  {allExpanded ? "Fold sammen" : "Fold ud"}
+                  {allGroupsExpanded && allExpanded ? "Fold sammen" : "Fold ud"}
                 </button>
               )}
             </span>
@@ -1072,14 +1148,12 @@ export function AabneOrdrerSection({
         <p className="text-sm text-[var(--fg-2)]">Ingen åbne ordrer.</p>
       ) : (
         <>
-          {/* Brief 89 (28. sep 2026): "Kommentér valgte" over listen.
-              Aktiv når mindst én ordre er valgt. Åbner dialog der
-              opretter én kommentar-række pr. ordre. */}
+          {/* §29e: selection count + comment button. */}
           <div className="mb-2 flex items-center justify-between gap-3">
             <span className="text-[length:var(--t-meta)] text-[var(--fg-3)]">
               {selected.size > 0
                 ? `${selected.size} valgt`
-                : "Vælg for at kommentere"}
+                : "Vælg en bunke eller enkelte ordrer for at kommentere"}
             </span>
             <button
               type="button"
@@ -1095,31 +1169,77 @@ export function AabneOrdrerSection({
               Kommentér valgte
             </button>
           </div>
-          <RowGroup>
-            {visibleOrders.map((o) => (
-              <OrderRow
-                key={o.ordre_nr}
-                order={o}
-                open={expanded.has(o.ordre_nr)}
-                onToggle={() => toggleExpanded(o.ordre_nr)}
-                selected={selected.has(o.ordre_nr)}
-                onToggleSelect={() => toggleSelected(o.ordre_nr)}
-                kommentarer={kommentarerPrOrdre.get(o.ordre_nr) ?? []}
-              />
-            ))}
-          </RowGroup>
-          {hiddenOrders > 0 && (
-            <div className="mt-3 self-start">
-              <LagoButton
-                variant="secondary"
-                onClick={() => setShowAllOrders(true)}
+          {/* §29a–b: grouped by bucket. Empty buckets hidden. */}
+          {BUCKET_ORDER.map((bucketKey) => {
+            const bucketOrders = buckets.get(bucketKey);
+            if (!bucketOrders || bucketOrders.length === 0) return null;
+            const bucketSum = bucketOrders.reduce((s, o) => s + o.total, 0);
+            const groupOpen = expandedGroups.has(bucketKey);
+            const groupAllSelected = bucketOrders.every((o) =>
+              selected.has(o.ordre_nr),
+            );
+            return (
+              <div
+                key={bucketKey}
+                className="border-b border-[var(--line)] last:border-b-0"
               >
-                Vis alle {orders.length}{" "}
-                {orders.length === 1 ? "ordre" : "ordrer"}
-              </LagoButton>
-            </div>
-          )}
-          <OrderTotals totals={totals} />
+                {/* §29b: group header row with count + amount. */}
+                <div className="flex items-center gap-2 py-3">
+                  <input
+                    type="checkbox"
+                    checked={groupAllSelected}
+                    onChange={() => toggleGroupSelection(bucketKey)}
+                    aria-label={`Vælg alle i ${BUCKET_LABEL[bucketKey]}`}
+                    className="h-4 w-4 shrink-0 cursor-pointer accent-[var(--ink)]"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => toggleGroup(bucketKey)}
+                    className="flex flex-1 items-center gap-2 text-left hover:bg-[var(--surface-1)] rounded-md -mx-1 px-1"
+                  >
+                    <span
+                      aria-hidden
+                      className={cn(
+                        "w-3 shrink-0 text-[var(--fg-3)] tabular-nums text-[11px] transition-transform",
+                        groupOpen && "rotate-90",
+                      )}
+                    >
+                      ▶
+                    </span>
+                    <span className="font-semibold text-sm text-[var(--fg)]">
+                      {BUCKET_LABEL[bucketKey]}
+                    </span>
+                    <span className="text-[length:var(--t-meta)] text-[var(--fg-3)]">
+                      {bucketOrders.length}{" "}
+                      {bucketOrders.length === 1 ? "ordre" : "ordrer"}
+                    </span>
+                    <span className="flex-1" />
+                    <span className="font-semibold text-sm tabular-nums text-[var(--fg)]">
+                      {kroner.format(bucketSum)}
+                    </span>
+                  </button>
+                </div>
+                {/* Orders inside the group. */}
+                {groupOpen && (
+                  <div className="pl-6 pb-2">
+                    <RowGroup>
+                      {bucketOrders.map((o) => (
+                        <OrderRow
+                          key={o.ordre_nr}
+                          order={o}
+                          open={expanded.has(o.ordre_nr)}
+                          onToggle={() => toggleExpanded(o.ordre_nr)}
+                          selected={selected.has(o.ordre_nr)}
+                          onToggleSelect={() => toggleSelected(o.ordre_nr)}
+                          kommentarer={kommentarerPrOrdre.get(o.ordre_nr) ?? []}
+                        />
+                      ))}
+                    </RowGroup>
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </>
       )}
       <OrdreKommentarDialog
@@ -1278,12 +1398,8 @@ function OrderRow({
           </p>
         </div>
       ))}
-      {open && hasLines && (
-        <OrderLines lines={o.lines} tillaegOgAfgifter={o.tillaegOgAfgifter} />
-      )}
-      {/* §11e (30. sep 2026): order notes from open_order_notes_lago.
-          Shown when the order is expanded and has notes. ExpandableNote
-          handles the folding — median is 1 line, max is 21. */}
+      {/* §29f: notes above order lines — read why before what. Line
+          count shown only when folded. */}
       {open && o.orderNotes.length > 0 && (
         <div className="mt-1 pl-[1.125rem]">
           <ExpandableNote
@@ -1291,11 +1407,10 @@ function OrderRow({
             clampLines={3}
             className="text-[length:var(--t-meta)] text-[var(--fg-2)]"
           />
-          <p className="mt-0.5 text-[12px] text-[var(--fg-3)]">
-            {o.orderNotes.length}{" "}
-            {o.orderNotes.length === 1 ? "notelinje" : "notelinjer"}
-          </p>
         </div>
+      )}
+      {open && hasLines && (
+        <OrderLines lines={o.lines} tillaegOgAfgifter={o.tillaegOgAfgifter} />
       )}
     </li>
   );
@@ -1308,7 +1423,7 @@ function OrderRow({
  * ordrer, står "Vis alle N ordrer →" under listen — så tallet stemmer
  * med overskriften og totalen.
  */
-const ORDER_LIMIT = 5;
+// §29: ORDER_LIMIT removed — grouping replaces flat-list clipping.
 
 /**
  * Brief 75 tillæg D §4: linje-detaljer i en foldet-ud ordre.
@@ -1563,82 +1678,9 @@ function OrderLineRow({
   );
 }
 
-/**
- * Brief 75 tillæg C · rev. tillæg H (22. sep 2026) · totalerne under listen.
- *
- * "I alt" og "Klar til levering" står altid. "Afventer ankomst", "På
- * reservation" og "En Primeur" står KUN når de er > 0 — en linje der
- * siger nul er støj.
- *
- * Tillæg H rettede en fejl fra tillæg C/G: På reservation og En
- * Primeur skal være MED i "I alt". Ellers står totalen på 0 kr. med
- * beløb lige under, hvilket er åbenlyst forkert (Langø Grill: "I alt
- * 0 kr. / På reservation 15.870 kr."). De to står stadig med luft over
- * — samme total, anden slags forpligtelse.
- */
-function OrderTotals({ totals }: { totals: OpenOrdersTotals }) {
-  return (
-    <div className="mt-3 flex flex-col gap-1 border-t border-[var(--line)] pt-3 text-sm">
-      {/* §20b-e: "Alle åbne ordrer" instead of "I alt" — when the
-          customer has one order, "I alt" repeats three times on screen
-          (order row, table sum row, card footer). This labels what the
-          sum covers, not just that it is one. */}
-      <div className="flex items-baseline justify-between gap-3">
-        <span className="text-[var(--fg-2)]">Alle åbne ordrer</span>
-        <span className="font-medium text-[var(--fg)] tabular-nums">
-          {kroner.format(totals.iAlt)}
-        </span>
-      </div>
-      <div className="flex items-baseline justify-between gap-3">
-        <span className="text-[var(--fg-2)]">Klar til levering</span>
-        <span className="font-medium text-[var(--fg)] tabular-nums">
-          {kroner.format(totals.klar)}
-        </span>
-      </div>
-      {/* Brief 90 §4-opfølgning (29. sep 2026): MAV har egen linje.
-          Klar på lager, men afventer selskab — sælgeren ser hvilke af
-          kundens ordrer der venter på andre varer, når han står i
-          butikken. Kun synlig når > 0. */}
-      {totals.venterPaaAndre > 0 && (
-        <div className="flex items-baseline justify-between gap-3">
-          <span className="text-[var(--fg-2)]">Venter på andre varer</span>
-          <span className="font-medium text-[var(--fg)] tabular-nums">
-            {kroner.format(totals.venterPaaAndre)}
-          </span>
-        </div>
-      )}
-      {totals.afventer > 0 && (
-        <div className="flex items-baseline justify-between gap-3">
-          <span className="text-[var(--fg-2)]">Afventer ankomst</span>
-          <span className="font-medium text-[var(--fg)] tabular-nums">
-            {kroner.format(totals.afventer)}
-          </span>
-        </div>
-      )}
-      {/* Brief 75 tillæg H (22. sep 2026): På reservation og En Primeur
-          er MED i I alt (rettelse af tillæg C/G). De står efter en luft
-          — samme total, anden slags forpligtelse. På reservation først
-          (mest hyppig, kundens instruks), En Primeur bagefter (ganske
-          sjælden, aftalt om år). */}
-      {totals.paaReservation > 0 && (
-        <div className="mt-2 flex items-baseline justify-between gap-3">
-          <span className="text-[var(--fg-3)]">På reservation</span>
-          <span className="font-medium text-[var(--fg-3)] tabular-nums">
-            {kroner.format(totals.paaReservation)}
-          </span>
-        </div>
-      )}
-      {totals.enPrimeur > 0 && (
-        <div className="mt-2 flex items-baseline justify-between gap-3">
-          <span className="text-[var(--fg-3)]">En Primeur</span>
-          <span className="font-medium text-[var(--fg-3)] tabular-nums">
-            {kroner.format(totals.enPrimeur)}
-          </span>
-        </div>
-      )}
-    </div>
-  );
-}
+// §29c: OrderTotals removed — group header rows ARE the sums now.
+// The card footer duplicated totals that were already visible as
+// bucket headers. Header shows "14 aktive · 299.043 kr.".
 
 /** Brief 51 §4: "fredag 17. maj" — dansk ugedag + dag + kort måned. */
 function formatWeekdayDate(iso: string): string {
