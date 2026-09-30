@@ -93,6 +93,9 @@ export interface OpenOrderSummary {
   /** §11d (30. sep 2026): notes from open_order_notes_lago, joined on
    *  ordre_nr, sorted by linje_nr. Raw text, no interpretation. */
   orderNotes: OrderNote[];
+  /** §39: lines + notes interleaved in linje_nr order (VISMA's order).
+   *  This is what the UI renders — no status-based reordering. */
+  interleavedLines: OrderLineOrNote[];
   /** §32a (30. sep 2026): true when all visible lines have status=21
    *  (En Primeur — agreed 1-2 years ahead). Used for bucket classification. */
   isEnPrimeur: boolean;
@@ -103,6 +106,11 @@ export interface OrderNote {
   note_type: "inote" | "enote";
   beskrivelse: string;
 }
+
+/** §39: union type for interleaved lines + notes in linje_nr order. */
+export type OrderLineOrNote =
+  | ({ kind: "line" } & OpenOrderLine)
+  | ({ kind: "note" } & OrderNote);
 
 /**
  * Brief 75 tillæg C · rev. brief 78 tillæg A §1 · rev. tillæg H (22. sep
@@ -373,20 +381,11 @@ export function useOpenOrders(vismaCustomerNo: string | null | undefined) {
             };
           })
           .sort((a, b) => {
-            // Brief 75 tillæg G: reservationer sorteres først (kræver
-            // handling — sælgeren kan spørge om træk), dernæst afventer,
-            // dernæst delvis, dernæst klar. Sekundær: beløb faldende.
-            const rank = (s: OpenOrderLine["kundeStatus"]) =>
-              s === "reservation"
-                ? 0
-                : s === "afventer"
-                  ? 1
-                  : s === "delvis"
-                    ? 2
-                    : 3;
-            const dr = rank(a.kundeStatus) - rank(b.kundeStatus);
-            if (dr !== 0) return dr;
-            return b.ej_faktureret - a.ej_faktureret;
+            // §39c: VISMA's line order — linje_nr ascending. No status-based
+            // reordering. Three screens (CRM, VISMA, order slip) same order.
+            return a.linje_nr.localeCompare(b.linje_nr, undefined, {
+              numeric: true,
+            });
           });
 
         // Brief 78 tillæg B §3: en ordre uden synlige linjer (fx
@@ -443,6 +442,17 @@ export function useOpenOrders(vismaCustomerNo: string | null | undefined) {
           lines: orderLines,
           tillaegOgAfgifter,
           orderNotes: notesByOrdre.get(ordre_nr) ?? [],
+          // §39a: interleave lines + notes in linje_nr order.
+          interleavedLines: [
+            ...orderLines.map((l): OrderLineOrNote => ({ kind: "line", ...l })),
+            ...(notesByOrdre.get(ordre_nr) ?? []).map(
+              (n): OrderLineOrNote => ({ kind: "note", ...n }),
+            ),
+          ].sort((a, b) =>
+            a.linje_nr.localeCompare(b.linje_nr, undefined, {
+              numeric: true,
+            }),
+          ),
         });
       }
       out.sort((a, b) => (a.ordre_dato < b.ordre_dato ? 1 : -1));

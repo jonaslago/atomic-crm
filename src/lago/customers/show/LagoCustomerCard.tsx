@@ -60,6 +60,7 @@ import { ProposeChangeButton } from "./ProposeChangeDialog";
 import {
   useOpenOrders,
   type OpenOrderLine,
+  type OrderLineOrNote,
   type OpenOrderSummary,
 } from "./useOpenOrders";
 
@@ -1467,18 +1468,12 @@ function OrderRow({
           </p>
         </div>
       ))}
-      {/* Notes above lines */}
-      {open && o.orderNotes.length > 0 && (
-        <div className="mt-1 pl-6">
-          <ExpandableNote
-            text={o.orderNotes.map((n) => n.beskrivelse).join("\n")}
-            clampLines={3}
-            className="text-[length:var(--t-meta)] text-[var(--fg-2)]"
-          />
-        </div>
-      )}
+      {/* §39d: note block removed — notes interleaved in OrderLines. */}
       {open && hasLines && (
-        <OrderLines lines={o.lines} tillaegOgAfgifter={o.tillaegOgAfgifter} />
+        <OrderLines
+          interleavedLines={o.interleavedLines}
+          tillaegOgAfgifter={o.tillaegOgAfgifter}
+        />
       )}
     </li>
   );
@@ -1501,30 +1496,29 @@ function OrderRow({
 const ORDER_LINE_LIMIT = 10;
 
 function OrderLines({
-  lines,
+  interleavedLines,
   tillaegOgAfgifter,
 }: {
-  lines: OpenOrderLine[];
+  interleavedLines: OrderLineOrNote[];
   tillaegOgAfgifter: number;
 }) {
   const [showAll, setShowAll] = useState(false);
-  const visibleLines = showAll ? lines : lines.slice(0, ORDER_LINE_LIMIT);
-  const hidden = lines.length - visibleLines.length;
-  // §20 (29. sep 2026): sumrækken — tallene ingen kan regne i hovedet.
-  // Klar / Afventer / I alt. Reservation slås sammen med afventer
-  // (kunden venter stadig). Beløb regnes på synlige linjer, inklusive
-  // "Vis alle" — vi viser tallene for den fulde ordre uanset klipning.
-  const klarSum = lines
+  const visibleItems = showAll
+    ? interleavedLines
+    : interleavedLines.slice(0, ORDER_LINE_LIMIT);
+  const hidden = interleavedLines.length - visibleItems.length;
+  // §39h: summary only when the order has BOTH klar and non-klar lines.
+  const vareLines = interleavedLines.filter(
+    (item): item is { kind: "line" } & OpenOrderLine => item.kind === "line",
+  );
+  const klarSum = vareLines
     .filter((l) => l.kundeStatus === "klar")
     .reduce((s, l) => s + l.ej_faktureret, 0);
-  const afventerSum = lines
+  const afventerSum = vareLines
     .filter((l) => l.kundeStatus !== "klar")
     .reduce((s, l) => s + l.ej_faktureret, 0);
   const iAltSum = klarSum + afventerSum + Math.max(0, tillaegOgAfgifter);
-  // Index for den første klar-linje så vi kan lægge en skillelinje der.
-  // Kilden er sorteret: reservation → afventer → delvis → klar. Første
-  // "klar" markerer grænsen mellem afventende og afsendte varer.
-  const firstKlarIdx = visibleLines.findIndex((l) => l.kundeStatus === "klar");
+  const hasMixedStatus = klarSum > 0 && afventerSum > 0;
   return (
     <div className="@container mt-1">
       {/* §20b-a (30. sep 2026): no grey box — lines sit directly on
@@ -1554,32 +1548,37 @@ function OrderLines({
           </tr>
         </thead>
         <tbody>
-          {visibleLines.map((l, i) => {
-            const showDivider = i === firstKlarIdx && i > 0;
-            return (
-              <OrderLineTableRow
-                key={l.linje_nr}
-                line={l}
-                showDivider={showDivider}
-              />
-            );
-          })}
-          {/* §20b-b/c: hairline border, aligned to columns. Klar/Afventer
-              as Meta in the Vare column; total under Beløb column. */}
-          <tr className="border-t border-[var(--line)]">
-            <td className="pt-2 text-[length:var(--t-meta)] text-[var(--fg-2)]">
-              Klar {kroner.format(klarSum)} · Afventer{" "}
-              {kroner.format(afventerSum)}
-              {tillaegOgAfgifter > 0
-                ? ` · Tillæg ${kroner.format(tillaegOgAfgifter)}`
-                : ""}
-            </td>
-            <td className="pt-2" />
-            <td className="pt-2 text-right font-medium tabular-nums text-[var(--fg)]">
-              {kroner.format(iAltSum)}
-            </td>
-            <td className="pt-2" />
-          </tr>
+          {visibleItems.map((item) =>
+            item.kind === "note" ? (
+              <tr key={`note-${item.linje_nr}`}>
+                <td
+                  colSpan={4}
+                  className="py-1.5 pl-3 text-[length:var(--t-meta)] text-[var(--fg-2)] italic"
+                >
+                  {item.beskrivelse}
+                </td>
+              </tr>
+            ) : (
+              <OrderLineTableRow key={item.linje_nr} line={item} />
+            ),
+          )}
+          {/* §39h: summary only when mixed klar + non-klar. */}
+          {hasMixedStatus && (
+            <tr className="border-t border-[var(--line)]">
+              <td className="pt-2 text-[length:var(--t-meta)] text-[var(--fg-2)]">
+                Klar {kroner.format(klarSum)} · Afventer{" "}
+                {kroner.format(afventerSum)}
+                {tillaegOgAfgifter > 0
+                  ? ` · Tillæg ${kroner.format(tillaegOgAfgifter)}`
+                  : ""}
+              </td>
+              <td className="pt-2" />
+              <td className="pt-2 text-right font-medium tabular-nums text-[var(--fg)]">
+                {kroner.format(iAltSum)}
+              </td>
+              <td className="pt-2" />
+            </tr>
+          )}
           {hidden > 0 && (
             <tr>
               <td colSpan={4} className="pt-2">
@@ -1588,7 +1587,7 @@ function OrderLines({
                   onClick={() => setShowAll(true)}
                   className="text-[length:var(--t-sec)] font-medium text-[var(--fg-2)] underline-offset-2 hover:underline"
                 >
-                  Vis alle {lines.length} →
+                  Vis alle {interleavedLines.length} →
                 </button>
               </td>
             </tr>
@@ -1598,13 +1597,20 @@ function OrderLines({
       {/* <1280 px: panelform. TableRow-mønstret siger tabellen er
           kontorets; sælgeren står i en butik med telefonen. Beholder
           den eksisterende to-linjers OrderLineRow. */}
+      {/* §39: interleaved lines + notes in VISMA linje_nr order. */}
       <ul className="flex flex-col gap-2 @[640px]:hidden">
-        {visibleLines.map((l, i) => {
-          const showDivider = i === firstKlarIdx && i > 0;
-          return (
-            <OrderLineRow key={l.linje_nr} line={l} showDivider={showDivider} />
-          );
-        })}
+        {visibleItems.map((item) =>
+          item.kind === "note" ? (
+            <li
+              key={`note-${item.linje_nr}`}
+              className="pl-3 text-[length:var(--t-meta)] text-[var(--fg-2)] italic"
+            >
+              {item.beskrivelse}
+            </li>
+          ) : (
+            <OrderLineRow key={item.linje_nr} line={item} />
+          ),
+        )}
         {hidden > 0 && (
           <li>
             <button
@@ -1612,7 +1618,7 @@ function OrderLines({
               onClick={() => setShowAll(true)}
               className="text-[length:var(--t-sec)] text-[var(--fg-2)] font-medium underline-offset-2 hover:underline"
             >
-              Vis alle {lines.length} →
+              Vis alle {interleavedLines.length} →
             </button>
           </li>
         )}
@@ -1634,13 +1640,7 @@ function OrderLines({
  * højre-justerede tal, status som Meta ikke Badge. Skillelinje ved
  * første klar-linje så afventende står øverst i deres egen blok.
  */
-function OrderLineTableRow({
-  line: l,
-  showDivider,
-}: {
-  line: OpenOrderLine;
-  showDivider: boolean;
-}) {
+function OrderLineTableRow({ line: l }: { line: OpenOrderLine }) {
   const isDelvis = l.kundeStatus === "delvis";
   const statusTekst =
     l.kundeStatus === "reservation"
@@ -1651,7 +1651,7 @@ function OrderLineTableRow({
           ? "afventer ankomst"
           : `${l.reserveret} klar, ${l.rest} mangler`;
   return (
-    <tr className={showDivider ? "border-t border-[var(--line)]" : ""}>
+    <tr>
       {/* §20b-f: break-words instead of truncate — an ellipsised product
           name is useless for a salesperson standing with the customer. */}
       <td className="py-1.5 pr-3 text-[var(--fg)] break-words">
@@ -1693,13 +1693,7 @@ function OrderLineTableRow({
  * Linje 2: antal · beløb · statustekst, adskilt med `·`, alt i fg-2/t-sec.
  * Statustekst kommer fra rest (kundens mangel), ikke lagerstatus.
  */
-function OrderLineRow({
-  line: l,
-  showDivider,
-}: {
-  line: OpenOrderLine;
-  showDivider?: boolean;
-}) {
+function OrderLineRow({ line: l }: { line: OpenOrderLine }) {
   // Brief 78 tillæg A §1 · rev. brief 75 tillæg G (22. sep 2026):
   //   - reservation (levering=5): "på reservation"
   //   - klar (reserveret ≥ antal): "klar"
@@ -1715,12 +1709,7 @@ function OrderLineRow({
           ? "afventer ankomst"
           : `${l.reserveret} klar, ${l.rest} mangler`;
   return (
-    <li
-      className={cn(
-        "flex flex-col gap-0.5",
-        showDivider && "border-t border-[var(--line-2)] pt-2",
-      )}
-    >
+    <li className="flex flex-col gap-0.5">
       <span className="text-[length:var(--t-sec)] text-[var(--fg)] break-words">
         {l.produktnavn}
         {l.belobLabel && (
