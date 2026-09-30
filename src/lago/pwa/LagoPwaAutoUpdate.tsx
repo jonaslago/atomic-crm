@@ -84,11 +84,39 @@ export function LagoPwaAutoUpdate() {
   const hasUpdate = serverHash != null;
   if (!hasUpdate || dismissed) return null;
 
-  const handleReload = () => {
+  const handleReload = async () => {
     setReloading(true);
     try {
-      // location.replace forcer ny fetch af index.html + assets
-      // (query-strengen sikrer det ogsaa mod ekstra HTTP-caching).
+      // §26b-fix (30. sep 2026): three cache layers must all be cleared
+      // in one click. Without this, each click only peeled one layer:
+      //   1st click: location.replace bypasses HTTP cache but the old SW
+      //      serves the cached index.html from precache → old bundle.
+      //   2nd click: the new SW has now installed (skipWaiting) and serves
+      //      a fresh index.html, but the browser's back-forward cache
+      //      still held the old page.
+      //   3rd click: finally clean.
+      //
+      // Fix: activate the waiting SW, delete the navigation cache, THEN
+      // reload. One click, all three layers.
+
+      // Step 1: if a new service worker is waiting, tell it to activate.
+      const reg = await navigator.serviceWorker?.getRegistration();
+      if (reg?.waiting) {
+        reg.waiting.postMessage({ type: "SKIP_WAITING" });
+        // Give the new SW a moment to take over.
+        await new Promise((r) => setTimeout(r, 200));
+      }
+
+      // Step 2: delete the navigation cache so the new SW (or network)
+      // fetches a fresh index.html pointing at the new bundle.
+      const cacheNames = await caches.keys();
+      for (const name of cacheNames) {
+        if (name.includes("navigat") || name.includes("workbox-precache")) {
+          await caches.delete(name);
+        }
+      }
+
+      // Step 3: hard reload — bypasses any remaining HTTP cache.
       const url = new URL(window.location.href);
       url.searchParams.set("_v", Date.now().toString());
       window.location.replace(url.toString());

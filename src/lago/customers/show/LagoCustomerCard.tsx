@@ -1030,7 +1030,7 @@ export function AabneOrdrerSection({
     } catch {
       /* ignore */
     }
-    return new Set<BucketKey>(["klar"]);
+    return new Set<BucketKey>();
   });
   const persistGroups = (next: Set<BucketKey>) => {
     setExpandedGroups(next);
@@ -1053,7 +1053,8 @@ export function AabneOrdrerSection({
   );
   const toggleAll = () => {
     if (allGroupsExpanded && allExpanded) {
-      persistGroups(new Set(["klar"]));
+      // §29c: reset to all collapsed (was ["klar"] before).
+      persistGroups(new Set());
       persistExpanded(new Set());
     } else {
       persistGroups(new Set(BUCKET_ORDER));
