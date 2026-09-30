@@ -1,12 +1,14 @@
 // §11a (30. sep 2026): parser for "Åbne ordrelinier - noter".
 //
-// 13 columns. The correct file has "Produktnr 2" as a control column
-// and the distribution inote 8.820 · enote 1.652. The wrong file has
-// 12 columns and inote on every row.
+// 13 columns (VISMA duplicates "Ændret dato" — buildHeaderMap dedupes
+// to ~12 unique names; we count raw cells instead for the column check).
 //
-// Returns one row per (ordre_nr, linje_nr) for open_order_notes_lago.
-// No interpretation — raw text in linje_nr order (§11c).
-// note_type is stored but not displayed (§11d).
+// note_type is derived from the Produktnr column: value "inote" or
+// "enote". There is no separate Notetype column. Rows where Produktnr
+// is neither inote nor enote are rejected — they don't belong here.
+//
+// "Produktnr 2" is the control column that distinguishes the correct
+// 13-column file from the wrong 12-column file.
 
 import {
   buildHeaderMap,
@@ -28,20 +30,15 @@ export interface OpenOrderNoteRow {
 
 export type OpenOrderNotesPayload = OpenOrderNoteRow[];
 
-// The canonical header to find the header row.
 const HEADER_PROBE = "Ordrenr";
 
-// Required columns — if any is missing, the file is wrong.
 const REQUIRED_COLUMNS = [
   "Ordrenr",
   "Linienr",
+  "Produktnr",
   "Beskrivelse",
-  "Notetype",
 ] as const;
 
-// §11a control: "Produktnr 2" distinguishes the correct 13-column file
-// from the wrong 12-column file. We warn but don't block — the data is
-// still usable without it.
 const CONTROL_COLUMN = "Produktnr 2";
 
 export async function parseAabneOrdreNoter(
@@ -83,14 +80,17 @@ export async function parseAabneOrdreNoter(
   }
 
   const hasControlColumn = headerMap.has(CONTROL_COLUMN);
-  const colCount = headerMap.size;
+  // Raw cell count — headerMap.size may be lower due to duplicate
+  // column names (VISMA exports "Ændret dato" twice).
+  const rawColCount = (grid[headerRowIndex] ?? []).filter(
+    (c) => c != null && String(c).trim() !== "",
+  ).length;
 
   const idx = {
     ordrenr: headerMap.get("Ordrenr")!,
     linjenr: headerMap.get("Linienr")!,
-    produktnr: headerMap.get("Produktnr") ?? -1,
+    produktnr: headerMap.get("Produktnr")!,
     beskrivelse: headerMap.get("Beskrivelse")!,
-    notetype: headerMap.get("Notetype")!,
     aendret_dato:
       headerMap.get("Ændret dato") ?? headerMap.get("Aendret dato") ?? -1,
   };
@@ -99,16 +99,16 @@ export async function parseAabneOrdreNoter(
   const rowErrors: DryRunResult<never>["rowErrors"] = [];
   const payload: OpenOrderNoteRow[] = [];
   let rowsSeen = 0;
-  let rowsSkipped = 0;
+  let rowsSkippedMissing = 0;
+  let rowsSkippedNotNote = 0;
   let inoteCount = 0;
   let enoteCount = 0;
 
-  // §11a: warn if the control column is missing — likely wrong file.
   if (!hasControlColumn) {
     rowErrors.push({
       rowIndex: 0,
       message:
-        `⚠️ Kontrolkolonnen "${CONTROL_COLUMN}" mangler (${colCount} kolonner fundet). ` +
+        `⚠️ Kontrolkolonnen "${CONTROL_COLUMN}" mangler (${rawColCount} kolonner fundet). ` +
         `Den rigtige fil har 13 kolonner inkl. "${CONTROL_COLUMN}". ` +
         `Filen med 12 kolonner og inote på hver række er den forkerte kørsel.`,
     });
@@ -122,26 +122,32 @@ export async function parseAabneOrdreNoter(
     const ordrenr = cellString(row[idx.ordrenr]);
     const linjenr = cellString(row[idx.linjenr]);
     const beskrivelse = cellString(row[idx.beskrivelse]);
-    const notetypeRaw = cellString(row[idx.notetype])?.toLowerCase();
+    const produktnrRaw = cellString(row[idx.produktnr])?.toLowerCase();
 
     if (!ordrenr || !linjenr) {
-      rowsSkipped++;
+      rowsSkippedMissing++;
       continue;
     }
     if (!beskrivelse) {
-      rowsSkipped++;
+      rowsSkippedMissing++;
       continue;
     }
 
-    const noteType: "inote" | "enote" =
-      notetypeRaw === "enote" ? "enote" : "inote";
+    // note_type derived from Produktnr — the only values that belong
+    // in this file are "inote" and "enote". Everything else is rejected.
+    if (produktnrRaw !== "inote" && produktnrRaw !== "enote") {
+      rowsSkippedNotNote++;
+      continue;
+    }
+
+    const noteType: "inote" | "enote" = produktnrRaw;
     if (noteType === "inote") inoteCount++;
     else enoteCount++;
 
     payload.push({
       ordre_nr: ordrenr,
       linje_nr: linjenr,
-      produktnr: idx.produktnr >= 0 ? cellString(row[idx.produktnr]) : null,
+      produktnr: cellString(row[idx.produktnr]),
       note_type: noteType,
       beskrivelse,
       aendret_dato:
@@ -153,7 +159,9 @@ export async function parseAabneOrdreNoter(
     rowIndex: 0,
     message:
       `${payload.length} noter (inote: ${inoteCount}, enote: ${enoteCount}) ` +
-      `af ${rowsSeen} rækker. ${rowsSkipped} skippet (manglende nøgle/tekst).`,
+      `af ${rowsSeen} rækker. ` +
+      `${rowsSkippedMissing} skippet (manglende nøgle/tekst). ` +
+      `${rowsSkippedNotNote} afvist (Produktnr hverken inote/enote).`,
   });
 
   return {
