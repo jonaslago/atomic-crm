@@ -90,7 +90,7 @@ export function SalgsdataSyncStatus({
   const label = row
     ? translate("lago.sync.sales.at", {
         dato: dateFmt.format(new Date(row.koert_at)),
-        _: `Salgsdata synkroniseret ${dateFmt.format(new Date(row.koert_at))}`,
+        _: `Salgsdata pr. ${dateFmt.format(new Date(row.koert_at))}`,
       })
     : translate("lago.sync.sales.never", {
         _: "Salgsdata ikke synkroniseret endnu",
@@ -105,7 +105,7 @@ export function SalgsdataSyncStatus({
     <Link
       to="/indstillinger"
       title={translate("lago.sync.sales.open_import", {
-        _: "Åbn Indstillinger for at importere salgsdata",
+        _: "Fakturaer bogført efter dette tidspunkt er ikke med. Opdateres ved import.",
       })}
       className={cn(
         "inline-flex items-center gap-1.5 px-2 py-1",

@@ -192,14 +192,14 @@ export const danishLagoMessages = {
       district_all: "Alle distrikter",
       district_label: "Distrikt",
       // Samme rettelse — sætningen løj (data er der; widget er ikke bygget).
-      empty_awaiting_visma:
-        "Under opbygning — salgsdataene er indlæst.",
+      empty_awaiting_visma: "Under opbygning — salgsdataene er indlæst.",
     },
     sync: {
       sales: {
         never: "Salgsdata ikke synkroniseret endnu",
-        at: "Salgsdata synkroniseret %{dato}",
-        open_import: "Åbn Indstillinger for at importere salgsdata",
+        at: "Salgsdata pr. %{dato}",
+        open_import:
+          "Fakturaer bogført efter dette tidspunkt er ikke med. Opdateres ved import.",
       },
     },
     testdata: {
@@ -370,7 +370,7 @@ export const danishLagoMessages = {
         // har fået tildelt kunder endnu.
         empty_mine_title: "Ingen kunder er tildelt dig endnu.",
         empty_mine_body:
-          "Tildeling sker i VISMA. Slå \"Mine kunder\" fra for at se alle kunder — eller kontakt din administrator, hvis du mener, det er en fejl.",
+          'Tildeling sker i VISMA. Slå "Mine kunder" fra for at se alle kunder — eller kontakt din administrator, hvis du mener, det er en fejl.',
         empty_mine_show_all: "Vis alle kunder",
         page_size_hint: "Viser %{n} af %{total}",
         // Brief 23 pkt 6: hvor mange kigger jeg pa. Naar filtrene er
@@ -410,8 +410,7 @@ export const danishLagoMessages = {
         scope_notes: "Noter",
         filters: "Filtre",
         table_view: "Vis som tabel",
-        empty_hint:
-          "Skriv navn, by eller kundenr. Prøv genvejene her:",
+        empty_hint: "Skriv navn, by eller kundenr. Prøv genvejene her:",
         shortcut_mine: "Mine kunder",
         shortcut_needs_visit: "Trænger til besøg",
         shortcut_never_visited: "Aldrig besøgt",
@@ -469,8 +468,7 @@ export const danishLagoMessages = {
         contact_label: "Om kontakt (valgfrit)",
         contact_none: "— ikke en specifik person —",
         submit: "Gem note",
-        hint:
-          "Bruges kun til noter der ikke hører til et konkret besøg eller aktivitet — ellers vælg Besøg eller Aktivitet.",
+        hint: "Bruges kun til noter der ikke hører til et konkret besøg eller aktivitet — ellers vælg Besøg eller Aktivitet.",
       },
       cancel: "Annullér",
       close: "Luk",
