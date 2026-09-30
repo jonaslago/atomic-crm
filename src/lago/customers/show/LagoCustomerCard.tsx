@@ -1279,9 +1279,9 @@ function OrderLines({
   // "klar" markerer grænsen mellem afventende og afsendte varer.
   const firstKlarIdx = visibleLines.findIndex((l) => l.kundeStatus === "klar");
   return (
-    <div className="mt-1 rounded-md bg-[var(--surface-1)] p-2">
-      {/* @[640px]+: tabel med fire kolonner. Tallene står under
-          hinanden, enheden i overskriften ikke i cellen. */}
+    <div className="@container mt-1 rounded-md bg-[var(--surface-1)] p-2">
+      {/* §20 (30. sep 2026): @container on this div enables the @[640px]
+          container query below. Without it the query never matches. */}
       <table className="hidden w-full text-sm @[640px]:table">
         <thead>
           <tr className="text-left text-[length:var(--t-meta)] font-medium text-[var(--fg-3)]">
