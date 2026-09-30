@@ -154,7 +154,7 @@ export const WIDGETS: Record<string, WidgetDefinition> = {
   //         for hvorfor "dækningsgrad" var forkert ord) -------
   besoegsdaekning: {
     title: "Besøgsdækning",
-    subtitle: "Kunder inden for deres aftalte besøgsinterval",
+    subtitle: "Alle aktive kunder fordelt på segment og besøgsstatus",
     width: "full",
     component: BesoegsdaekningWidget,
   },

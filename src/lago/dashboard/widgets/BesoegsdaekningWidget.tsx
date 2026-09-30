@@ -67,7 +67,7 @@ export function BesoegsdaekningWidget() {
   return (
     <WidgetShell
       title="Besøgsdækning"
-      subtitle="Kunder inden for deres aftalte besøgsinterval"
+      subtitle="Alle aktive kunder fordelt på segment og besøgsstatus"
       isLoading={query.isPending}
       error={query.error as Error | null}
       isEmpty={rows.length === 0}
@@ -79,7 +79,9 @@ export function BesoegsdaekningWidget() {
             <tr className="text-left text-[13px] font-medium text-[var(--fg-2)]">
               <th className="pb-2 pr-3 font-medium">Segment</th>
               <th className="pb-2 pr-3 text-right font-medium">Ajour</th>
-              <th className="pb-2 pr-3 text-right font-medium">Trænger snart</th>
+              <th className="pb-2 pr-3 text-right font-medium">
+                Trænger snart
+              </th>
               <th className="pb-2 pr-3 text-right font-medium">Overskredet</th>
               <th className="pb-2 text-right font-medium">I alt</th>
             </tr>

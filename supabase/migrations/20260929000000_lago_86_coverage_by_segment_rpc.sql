@@ -35,9 +35,13 @@ AS $$
         FROM public.companies_lago cl
         LEFT JOIN public.customers_with_priority_lago vp
           ON vp.company_id = cl.company_id
-        WHERE COALESCE(cl.is_active, true) = true
-          AND COALESCE(cl.is_visible_to_sales, true) = true
-          AND (cl.segment IS NULL OR cl.segment <> 'L')
+        -- §27 (30. sep 2026): match the customer list's exact filter.
+        -- COALESCE included 5 customers with is_visible_to_sales=NULL
+        -- that the list excludes; the widget must agree with the list.
+        WHERE cl.is_active = true
+          AND cl.is_visible_to_sales = true
+          AND cl.segment IS NOT NULL
+          AND cl.segment <> 'L'
     ) t
     GROUP BY segment_bucket
     ORDER BY
