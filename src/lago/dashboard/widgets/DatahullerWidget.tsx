@@ -24,7 +24,12 @@ import { WidgetShell } from "../WidgetShell";
  * navigere til det sted problemet kan rettes.
  */
 
-type HullType = "uden_ejer" | "uden_kontakt" | "uden_adresse" | "uden_segment";
+type HullType =
+  | "uden_ejer"
+  | "uden_kontakt"
+  | "uden_adresse"
+  | "uden_segment"
+  | "uden_distrikt";
 
 const FILTER_LABEL: Record<HullType, string> = {
   // Tillæg 26A §3: "Uden ejer" er ikke et hul — det er en kø.
@@ -34,6 +39,9 @@ const FILTER_LABEL: Record<HullType, string> = {
   uden_kontakt: "Uden kontakt",
   uden_adresse: "Uden adresse",
   uden_segment: "Uden segment (X)",
+  // §32b (30. sep 2026): customers without district — on par with
+  // missing seller. VISMA distriktskode 0 maps to NULL.
+  uden_distrikt: "Intet distrikt",
 };
 
 interface HullRow {
@@ -106,9 +114,7 @@ export function DatahullerWidget() {
     : 0;
 
   const activeRows = query.data?.rowsByType[filter] ?? [];
-  const activeCount = query.data?.counts[filter] ?? 0;
   const clipped = activeRows.slice(0, 5);
-  const hasMore = activeCount > clipped.length;
 
   return (
     <WidgetShell
@@ -148,10 +154,7 @@ export function DatahullerWidget() {
       </div>
       <ul className="flex flex-col gap-2">
         {clipped.map((r) => (
-          <li
-            key={r.id}
-            className="rounded-lg bg-[var(--surface-1)] px-3 py-2"
-          >
+          <li key={r.id} className="rounded-lg bg-[var(--surface-1)] px-3 py-2">
             <Link
               to={`/companies/${r.id}/show`}
               className="block text-base font-medium text-[var(--fg)] no-underline hover:underline"
