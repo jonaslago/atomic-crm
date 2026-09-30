@@ -49,6 +49,8 @@ interface OrdreKommentarDialogProps {
   companyName: string;
   ordreNumre: string[];
   onSaved?: () => void;
+  /** §38d: pre-select a hensigt when the dialog opens. */
+  defaultHensigt?: OrdreKommentarHensigt | null;
 }
 
 // Brief 89 tillæg A (28. sep 2026): seks hensigter. Rækkefølge er
@@ -70,6 +72,7 @@ export function OrdreKommentarDialog({
   companyName,
   ordreNumre,
   onSaved,
+  defaultHensigt,
 }: OrdreKommentarDialogProps) {
   const actorSalesId = useActorSalesId();
   const qc = useQueryClient();
@@ -78,10 +81,10 @@ export function OrdreKommentarDialog({
   const [note, setNote] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
 
-  // Reset ved åbning så en tidligere seance ikke lækker ind.
+  // Reset ved åbning — use defaultHensigt if provided (§38d).
   useEffect(() => {
     if (open) {
-      setHensigt(null);
+      setHensigt(defaultHensigt ?? null);
       setAftaltDato("");
       setNote("");
       setError(null);
@@ -141,8 +144,8 @@ export function OrdreKommentarDialog({
               : `Kommentér ${antal} ordrer`}
           </DialogTitle>
           <DialogDescription>
-            {companyName} · Kontoret læser kommentaren og handler i VISMA.
-            Én kommentar pr. ordre, så de kan lukkes hver for sig.
+            {companyName} · Kontoret læser kommentaren og handler i VISMA. Én
+            kommentar pr. ordre, så de kan lukkes hver for sig.
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4 py-2">
@@ -190,15 +193,18 @@ export function OrdreKommentarDialog({
                 className="min-h-11"
               />
               <p className="text-[12px] text-[var(--fg-3)]">
-                Kontoret sætter datoen på ordren i VISMA (Ønsket lev. Dato)
-                og leverer på den.
+                Kontoret sætter datoen på ordren i VISMA (Ønsket lev. Dato) og
+                leverer på den.
               </p>
             </div>
           )}
 
           <div className="space-y-1.5">
             <Label htmlFor="ok-note" className="text-sm font-medium">
-              Note {hensigt === "andet" && <span className="text-[var(--fg-3)]">· (påkrævet)</span>}
+              Note{" "}
+              {hensigt === "andet" && (
+                <span className="text-[var(--fg-3)]">· (påkrævet)</span>
+              )}
             </Label>
             <Textarea
               id="ok-note"
@@ -214,9 +220,7 @@ export function OrdreKommentarDialog({
             />
           </div>
 
-          {error && (
-            <p className="text-sm text-[var(--st-red-fg)]">{error}</p>
-          )}
+          {error && <p className="text-sm text-[var(--st-red-fg)]">{error}</p>}
         </div>
         <DialogFooter className="flex-row justify-end gap-2 sm:justify-end">
           <Button

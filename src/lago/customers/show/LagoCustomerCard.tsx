@@ -1083,6 +1083,9 @@ export function AabneOrdrerSection({
     });
   };
   const [dialogOpen, setDialogOpen] = useState(false);
+  // §38d: "Aftal levering" dialog for the klar bucket — pre-selects
+  // hensigt "leveringsdato" and targets all klar orders.
+  const [aftalDialogOpen, setAftalDialogOpen] = useState(false);
 
   const buckets = useMemo(() => {
     const map = new Map<BucketKey, OpenOrderSummary[]>();
@@ -1266,6 +1269,20 @@ export function AabneOrdrerSection({
                       />
                     ))}
                   </RowGroup>
+                  {/* §38d: "Aftal levering" button — only on the klar bucket.
+                      Opens the existing comment dialog with hensigt pre-set
+                      to "leveringsdato". Full width on mobile (§38e). */}
+                  {bucketKey === "klar" && (
+                    <div className="mt-2">
+                      <LagoButton
+                        variant="secondary"
+                        onClick={() => setAftalDialogOpen(true)}
+                        className="w-full md:w-auto"
+                      >
+                        Aftal levering
+                      </LagoButton>
+                    </div>
+                  )}
                 </div>
               </div>
             );
@@ -1281,6 +1298,16 @@ export function AabneOrdrerSection({
         companyId={companyId}
         companyName={companyName}
         ordreNumre={Array.from(selected)}
+      />
+      {/* §38d: "Aftal levering" dialog for klar bucket — pre-selects
+          leveringsdato hensigt and targets all klar orders. */}
+      <OrdreKommentarDialog
+        open={aftalDialogOpen}
+        onOpenChange={setAftalDialogOpen}
+        companyId={companyId}
+        companyName={companyName}
+        ordreNumre={(buckets.get("klar") ?? []).map((o) => o.ordre_nr)}
+        defaultHensigt="leveringsdato"
       />
     </Section>
   );
