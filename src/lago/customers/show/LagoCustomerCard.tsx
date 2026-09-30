@@ -1196,27 +1196,56 @@ export function AabneOrdrerSection({
         <p className="text-sm text-[var(--fg-2)]">Ingen åbne ordrer.</p>
       ) : (
         <>
-          {/* §29e: selection count + comment button. */}
-          <div className="mb-2 flex items-center justify-between gap-3">
-            <span className="text-[length:var(--t-meta)] text-[var(--fg-3)]">
-              {selected.size > 0
-                ? `${selected.size} valgt`
-                : "Vælg en bunke eller enkelte ordrer for at kommentere"}
-            </span>
-            <button
-              type="button"
-              onClick={() => setDialogOpen(true)}
-              disabled={selected.size === 0}
-              className={cn(
-                "min-h-9 rounded-md px-3 text-sm font-medium",
-                selected.size > 0
-                  ? "bg-[var(--ink)] text-white hover:bg-[var(--ink)]/90"
-                  : "bg-[var(--surface-2)] text-[var(--fg-3)]",
-              )}
-            >
-              Kommentér valgte
-            </button>
-          </div>
+          {/* §29e + §38d-fix: selection actions at the top. Both follow
+              the checkmark selection — they act on what's checked. */}
+          {(() => {
+            // §38d-fix: "Aftal levering" active only when at least one
+            // selected order is in the "klar" bucket. The others already
+            // have an agreement or are missing goods.
+            const klarOrdreNr = new Set(
+              (buckets.get("klar") ?? []).map((o) => o.ordre_nr),
+            );
+            const hasKlarSelected = [...selected].some((nr) =>
+              klarOrdreNr.has(nr),
+            );
+            return (
+              <div className="mb-2 flex items-center justify-between gap-3">
+                <span className="text-[length:var(--t-meta)] text-[var(--fg-3)]">
+                  {selected.size > 0
+                    ? `${selected.size} valgt`
+                    : "Vælg en bunke eller enkelte ordrer"}
+                </span>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setAftalDialogOpen(true)}
+                    disabled={!hasKlarSelected}
+                    className={cn(
+                      "min-h-9 rounded-md px-3 text-sm font-medium",
+                      hasKlarSelected
+                        ? "bg-[var(--surface-3)] text-[var(--fg)] hover:bg-[var(--surface-3)]/80"
+                        : "bg-[var(--surface-2)] text-[var(--fg-3)]",
+                    )}
+                  >
+                    Aftal levering
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDialogOpen(true)}
+                    disabled={selected.size === 0}
+                    className={cn(
+                      "min-h-9 rounded-md px-3 text-sm font-medium",
+                      selected.size > 0
+                        ? "bg-[var(--ink)] text-white hover:bg-[var(--ink)]/90"
+                        : "bg-[var(--surface-2)] text-[var(--fg-3)]",
+                    )}
+                  >
+                    Kommentér valgte
+                  </button>
+                </div>
+              </div>
+            );
+          })()}
           {/* §38b+c: buckets always open, with explanation in parens. */}
           {BUCKET_ORDER.map((bucketKey) => {
             const bucketOrders = buckets.get(bucketKey);
@@ -1270,20 +1299,8 @@ export function AabneOrdrerSection({
                       />
                     ))}
                   </RowGroup>
-                  {/* §38d: "Aftal levering" button — only on the klar bucket.
-                      Opens the existing comment dialog with hensigt pre-set
-                      to "leveringsdato". Full width on mobile (§38e). */}
-                  {bucketKey === "klar" && (
-                    <div className="mt-2">
-                      <LagoButton
-                        variant="secondary"
-                        onClick={() => setAftalDialogOpen(true)}
-                        className="w-full md:w-auto"
-                      >
-                        Aftal levering
-                      </LagoButton>
-                    </div>
-                  )}
+                  {/* §38d-fix: "Aftal levering" moved to the selection
+                      toolbar at the top. Follows the checkmarks. */}
                 </div>
               </div>
             );
@@ -1300,14 +1317,16 @@ export function AabneOrdrerSection({
         companyName={companyName}
         ordreNumre={Array.from(selected)}
       />
-      {/* §38d: "Aftal levering" dialog for klar bucket — pre-selects
-          leveringsdato hensigt and targets all klar orders. */}
+      {/* §38d-fix: targets selected orders, not all klar orders. */}
       <OrdreKommentarDialog
         open={aftalDialogOpen}
-        onOpenChange={setAftalDialogOpen}
+        onOpenChange={(v) => {
+          setAftalDialogOpen(v);
+          if (!v) setSelected(new Set());
+        }}
         companyId={companyId}
         companyName={companyName}
-        ordreNumre={(buckets.get("klar") ?? []).map((o) => o.ordre_nr)}
+        ordreNumre={Array.from(selected)}
         defaultHensigt="leveringsdato"
       />
     </Section>
