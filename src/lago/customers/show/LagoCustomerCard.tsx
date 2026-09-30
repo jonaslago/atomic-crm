@@ -203,15 +203,18 @@ export function Section({
   isLast = false,
   variant = "divider",
   className,
+  id,
 }: {
   children: React.ReactNode;
   isLast?: boolean;
   variant?: SectionVariant;
   className?: string;
+  id?: string;
 }) {
   if (variant === "panel") {
     return (
       <section
+        id={id}
         className={cn(
           "bg-[var(--surface)] rounded-[var(--r-2)] p-4 mb-4 last:mb-0",
           className,
@@ -223,6 +226,7 @@ export function Section({
   }
   return (
     <section
+      id={id}
       className={cn(
         "py-5",
         !isLast && "border-b border-[var(--line)]",
@@ -832,6 +836,16 @@ export function OmsaetningSection({
   const isLaptop = layout === "laptop";
   const query = useSalesYtd(extension?.visma_customer_no ?? null);
   const data = query.data;
+  // §30b: open orders total + klar amount shown in the revenue box.
+  // useOpenOrders is already cached from AabneOrdrerSection below.
+  const ordreQuery = useOpenOrders(extension?.visma_customer_no ?? null);
+  const ordreTotal =
+    ordreQuery.data?.orders?.reduce((s, o) => s + o.total, 0) ?? 0;
+  const ordreKlar =
+    ordreQuery.data?.orders
+      ?.filter((o) => o.status === "klar" && !o.isMav)
+      .reduce((s, o) => s + o.total, 0) ?? 0;
+  const hasOrdrer = (ordreQuery.data?.orders?.length ?? 0) > 0;
 
   return (
     <Section variant={isLaptop ? "panel" : "divider"}>
@@ -880,7 +894,8 @@ export function OmsaetningSection({
                 </div>
                 <div className="flex flex-col gap-0.5">
                   <span className="text-[length:var(--t-meta)] text-[var(--fg-3)]">
-                    Sidste år (samme tid)
+                    {/* §30d: "hele måneden med" until daily grain is built. */}
+                    Sidste år (hele måneden med)
                   </span>
                   <span className="text-[length:var(--t-body)] font-semibold text-[var(--fg-2)] tabular-nums">
                     {kroner.format(data.ytdLastYear)}
@@ -904,6 +919,35 @@ export function OmsaetningSection({
                   {pctText && <span className="ml-2">{pctText}</span>}
                 </span>
               </div>
+              {/* §30b: open orders as a third size in the revenue box.
+                  Separated by --line to show it is not revenue (yet).
+                  §30c: amount links to the Åbne ordrer section. */}
+              {hasOrdrer && (
+                <div className="mt-3 border-t border-[var(--line)] pt-3">
+                  <div className="flex items-baseline justify-between gap-3">
+                    <span className="text-[length:var(--t-meta)] text-[var(--fg-3)]">
+                      Åbne ordrer
+                    </span>
+                    <a
+                      href="#aabne-ordrer"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        document
+                          .getElementById("aabne-ordrer")
+                          ?.scrollIntoView({ behavior: "smooth" });
+                      }}
+                      className="text-[length:var(--t-body)] font-semibold text-[var(--fg)] tabular-nums underline-offset-2 hover:underline"
+                    >
+                      {kroner.format(ordreTotal)}
+                    </a>
+                  </div>
+                  {ordreKlar > 0 && (
+                    <p className="mt-0.5 text-[length:var(--t-meta)] text-[var(--fg-3)]">
+                      heraf klar {kroner.format(ordreKlar)}
+                    </p>
+                  )}
+                </div>
+              )}
             </div>
           );
         })()
@@ -1080,16 +1124,22 @@ export function AabneOrdrerSection({
   const totalBelob = orders.reduce((s, o) => s + o.total, 0);
 
   return (
-    <Section variant={isLaptop ? "panel" : "divider"}>
-      {/* §29c: header shows total count + amount. */}
+    <Section variant={isLaptop ? "panel" : "divider"} id="aabne-ordrer">
+      {/* §30a: count as Meta, amount in --fg with weight so it reads
+          at a distance — same weight as the bucket sums below. */}
       {isLaptop ? (
         <SectionHeader
           variant="label"
           title="Åbne ordrer"
           subtitle={
-            orders.length > 0
-              ? `${orders.length} aktive · ${kroner.format(totalBelob)}`
-              : undefined
+            orders.length > 0 ? (
+              <span>
+                {orders.length} aktive ·{" "}
+                <span className="font-semibold text-[var(--fg)] tabular-nums">
+                  {kroner.format(totalBelob)}
+                </span>
+              </span>
+            ) : undefined
           }
           right={
             orders.length > 1 ? (
@@ -1111,9 +1161,12 @@ export function AabneOrdrerSection({
           right={
             <span className="flex items-center gap-3">
               {orders.length > 0 && (
-                <Meta>
-                  {orders.length} aktive · {kroner.format(totalBelob)}
-                </Meta>
+                <span className="flex items-baseline gap-1.5">
+                  <Meta>{orders.length} aktive</Meta>
+                  <span className="font-semibold text-[var(--fg)] text-sm tabular-nums">
+                    {kroner.format(totalBelob)}
+                  </span>
+                </span>
               )}
               {orders.length > 1 && (
                 <button
