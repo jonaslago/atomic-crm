@@ -970,10 +970,11 @@ type BucketKey =
   | "aftalt_mav"
   | "aftalt_dato"
   | "klar";
+// §32h: date before MAV in display order too.
 const BUCKET_ORDER: BucketKey[] = [
   "klar",
-  "aftalt_dato",
   "aftalt_mav",
+  "aftalt_dato",
   "reservation",
   "afventer",
   "en_primeur",
@@ -987,12 +988,14 @@ const BUCKET_LABEL: Record<BucketKey, string> = {
   klar: "Klar til levering – uden aftale",
 };
 function bucketFor(o: OpenOrderSummary): BucketKey {
-  // First matching rule wins, in priority order from the spec.
+  // §32h: first matching rule wins. Date before MAV — when a date is
+  // set, the MAV flag is leftover, not a state. An order with both a
+  // date and Levering=1 belongs in "med dato", not "med andre varer".
   if (o.isEnPrimeur) return "en_primeur";
   if (o.status === "restordre") return "afventer";
   if (o.status === "reservation") return "reservation";
-  if (o.isMav) return "aftalt_mav";
   if (o.oensketLevering != null) return "aftalt_dato";
+  if (o.isMav) return "aftalt_mav";
   return "klar";
 }
 
@@ -1392,11 +1395,9 @@ function OrderRow({
                 Ordre #{o.ordre_nr}
               </span>
             </div>
-            {/* §20 (30. sep 2026): Meta replaces StatusBadge — one text label
-              per order, not a colored pill per line. Ten pills in a column
-              was the visual noise we wanted to avoid. */}
-            {/* §32a: bucket label as Meta on order row. */}
-            <Meta>{BUCKET_LABEL[bucketFor(o)]}</Meta>
+            {/* §32g: bucket label removed from order row — the bucket
+                header carries the status. Only exceptions shown:
+                overdue date (red) and "N linjer afventer". */}
           </div>
           <div className="flex items-baseline justify-between gap-2 pl-[1.125rem]">
             <span className="min-w-0 truncate text-[length:var(--t-sec)] text-[var(--fg-2)]">
