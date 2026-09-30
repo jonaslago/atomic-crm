@@ -52,10 +52,11 @@ export const WIDGETS: Record<string, WidgetDefinition> = {
   },
   mine_opgaver: {
     title: "Åbne opgaver",
-    subtitle: "Udvalg af dine åbne opfølgninger",
+    subtitle: "Overskredne og opgaver med frist inden for 7 dage",
     width: "narrow",
     component: MineOpgaverWidget,
-    seeAllHref: "/aktiviteter",
+    seeAllHref: "/aktiviteter?filter=%7B%22type%22%3A%22opgave%22%7D",
+    seeAllLabel: "Se alle åbne opgaver",
   },
   // Brief 87 §3+§4 (28. sep 2026): salg + åbne ordrer. Fyldes ind i
   // hovedspalten under Kunder der skal besøges. To linjer, ikke fire —

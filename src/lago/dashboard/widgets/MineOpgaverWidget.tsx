@@ -11,7 +11,10 @@ import { getSupabaseClient } from "@/components/atomic-crm/providers/supabase/su
 import { useConfigurationContext } from "@/components/atomic-crm/root/ConfigurationContext";
 import { useActorSalesId } from "@/lago/portefolje/useActorSalesId";
 import { useAuthUserId } from "@/lago/portefolje/useAuthUserId";
-import { usePortefolje, useViewSalesId } from "@/lago/portefolje/PortefoljeContext";
+import {
+  usePortefolje,
+  useViewSalesId,
+} from "@/lago/portefolje/PortefoljeContext";
 import { RegistrerModal } from "@/lago/registrer/RegistrerModal";
 import { Icon } from "@/lago/ui/Icon";
 import { IconButton } from "@/lago/ui/IconButton";
@@ -71,7 +74,10 @@ type TaskRowFromApi = {
   due_date: string | null;
   contact_id: number | null;
   contacts:
-    | { company_id: number | null; companies: { id: number; name: string } | null }
+    | {
+        company_id: number | null;
+        companies: { id: number; name: string } | null;
+      }
     | Array<{
         company_id: number | null;
         companies: { id: number; name: string } | null;
@@ -353,16 +359,15 @@ export function MineOpgaverWidget() {
   const totalCount = query.data?.length ?? 0;
   const clipped = (query.data ?? []).slice(0, CLIP_TO);
 
-  // Brief 85 §5 (28. sep 2026): ét tal, ikke to. Er der overskredne,
-  // er dét tallet der betyder noget — det åbne totalt-tal er sekundært
-  // og lå ved siden i rødt uden at føje information til det haster-tal.
-  // Tonen følger indholdet: rød når der er overskredne, ellers neutral.
+  // §36 (30. sep 2026): both counts visible so the user knows what's
+  // outside the window. "4 overskredet · 3 inden for 7 dage" — not
+  // just overdue, which hid the upcoming ones.
+  const upcomingCount = totalCount - overdueCount;
+  const countParts: string[] = [];
+  if (overdueCount > 0) countParts.push(`${overdueCount} overskredet`);
+  if (upcomingCount > 0) countParts.push(`${upcomingCount} inden for 7 dage`);
   const countLabel =
-    overdueCount > 0
-      ? `${overdueCount} overskredet`
-      : totalCount > 0
-        ? `${totalCount} åbne`
-        : "Ingen åbne";
+    countParts.length > 0 ? countParts.join(" · ") : "Ingen åbne";
 
   // Brief 85 §16 (28. sep 2026): "Ny opgave" i widgetens header.
   // Klik åbner en kunde-vælger; når kunden er valgt, åbnes Registrér-
@@ -373,22 +378,24 @@ export function MineOpgaverWidget() {
     id: number;
     name: string;
   } | null>(null);
-  const nyOpgaveButton = salesId != null ? (
-    <button
-      type="button"
-      onClick={() => setPickerOpen(true)}
-      className="text-[var(--fg-2)] inline-flex items-center gap-0.5 text-[13px] font-medium no-underline hover:underline"
-    >
-      <Icon icon={Plus} size="sm" />
-      Ny opgave
-    </button>
-  ) : null;
+  const nyOpgaveButton =
+    salesId != null ? (
+      <button
+        type="button"
+        onClick={() => setPickerOpen(true)}
+        className="text-[var(--fg-2)] inline-flex items-center gap-0.5 text-[13px] font-medium no-underline hover:underline"
+      >
+        <Icon icon={Plus} size="sm" />
+        Ny opgave
+      </button>
+    ) : null;
 
   return (
     <WidgetShell
       title="Åbne opgaver"
-      subtitle="Udvalg af dine åbne opfølgninger"
-      seeAllHref="/aktiviteter"
+      subtitle="Overskredne og opgaver med frist inden for 7 dage"
+      seeAllHref="/aktiviteter?filter=%7B%22type%22%3A%22opgave%22%7D"
+      seeAllLabel="Se alle åbne opgaver"
       headerExtra={nyOpgaveButton}
       isLoading={query.isPending && salesId != null}
       error={query.error as Error | null}
@@ -404,7 +411,7 @@ export function MineOpgaverWidget() {
       emptyState={
         salesId == null
           ? "Log ind for at se dine opgaver."
-          : "Ingen åbne opfølgninger de næste 7 dage."
+          : "Ingen overskredte eller kommende opgaver inden for 7 dage."
       }
       noPanel
     >
