@@ -448,7 +448,7 @@ export function useOpenOrders(vismaCustomerNo: string | null | undefined) {
       //                       intet er faerdigmeldt endnu
       //   Afventer ankomst:   resten af beløbet på ordrer der ikke er
       //                       hele klar (og ikke er reservation/EP)
-      //   På reservation:     ordrer hvor alle synlige linjer er
+      //   I reservation:      ordrer hvor alle synlige linjer er
       //                       levering=5 (kundens træk-mod-lager)
       //   En Primeur:         ordrer hvor alle synlige linjer er
       //                       status=21 (aftalte 1-2 år) og ikke klar

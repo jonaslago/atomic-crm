@@ -922,9 +922,9 @@ type BucketKey = "afventer" | "reservation" | "mav" | "klar";
 const BUCKET_ORDER: BucketKey[] = ["klar", "mav", "afventer", "reservation"];
 const BUCKET_LABEL: Record<BucketKey, string> = {
   klar: "Klar til levering",
-  mav: "Venter på andre varer",
+  mav: "Skal leveres med andre varer (MAV)",
   afventer: "Afventer ankomst",
-  reservation: "På reservation",
+  reservation: "I reservation",
 };
 function bucketFor(o: OpenOrderSummary): BucketKey {
   if (o.status === "restordre") return "afventer";
@@ -1324,7 +1324,7 @@ function OrderRow({
               was the visual noise we wanted to avoid. */}
             <Meta>
               {o.status === "reservation"
-                ? "På reservation"
+                ? "I reservation"
                 : o.status === "klar"
                   ? "Klar"
                   : "Restordre"}

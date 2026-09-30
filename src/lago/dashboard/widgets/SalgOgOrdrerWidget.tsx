@@ -137,7 +137,8 @@ async function fetchSalgOgOrdrer(
       : Promise.resolve({ data: [], error: null }),
   ]);
   if ("error" in salgIAar && salgIAar.error) throw salgIAar.error;
-  if ("error" in salgSidsteAar && salgSidsteAar.error) throw salgSidsteAar.error;
+  if ("error" in salgSidsteAar && salgSidsteAar.error)
+    throw salgSidsteAar.error;
   if ("error" in aabneOrdre && aabneOrdre.error) throw aabneOrdre.error;
 
   const sum = (rows: Array<{ belob?: number | string | null }>) =>
@@ -167,7 +168,7 @@ async function fetchSalgOgOrdrer(
     (r) => Number(r.antal_faerdigmeldt ?? 0) > 0,
   );
   if (delvistFakturerede.length > 0) {
-    // eslint-disable-next-line no-console
+     
     console.warn(
       `[SalgOgOrdrer] ${delvistFakturerede.length} åbne linjer har antal_faerdigmeldt > 0.` +
         ' "beloeb" er alias for ej_faktureret; delvis fakturering kan gøre visningen mindre præcis. Overvej at revidere view + widget.',
@@ -346,11 +347,11 @@ export function SalgOgOrdrerWidget() {
                 udenfor. `title` giver forklaringen som tooltip. */}
             <div
               className="flex items-baseline justify-between gap-3"
-              title="Varer klar på lager, der venter på at blive sendt sammen med noget andet."
+              title="Varer klar på lager — skal leveres sammen med andre varer (Lev.bet. = 1)."
             >
               <div className="min-w-0 flex-1">
                 <div className="text-base font-bold text-[var(--fg)]">
-                  Venter på andre varer
+                  Skal leveres med andre varer
                 </div>
                 <div className="text-[13px] text-[var(--fg-2)]">
                   {nFmt.format(d.mavKunder)}{" "}
