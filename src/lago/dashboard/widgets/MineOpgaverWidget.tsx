@@ -394,7 +394,7 @@ export function MineOpgaverWidget() {
     <WidgetShell
       title="Åbne opgaver"
       subtitle="Overskredne og opgaver med frist inden for 7 dage"
-      seeAllHref="/aktiviteter?filter=%7B%22type%22%3A%22opgave%22%7D"
+      seeAllHref="/aktiviteter?period=kommende&types=opgave"
       seeAllLabel="Se alle åbne opgaver"
       headerExtra={nyOpgaveButton}
       isLoading={query.isPending && salesId != null}
@@ -411,7 +411,7 @@ export function MineOpgaverWidget() {
       emptyState={
         salesId == null
           ? "Log ind for at se dine opgaver."
-          : "Ingen overskredte eller kommende opgaver inden for 7 dage."
+          : "Ingen overskredne eller kommende opgaver inden for 7 dage."
       }
       noPanel
     >
