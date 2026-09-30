@@ -841,9 +841,11 @@ export function OmsaetningSection({
   const ordreQuery = useOpenOrders(extension?.visma_customer_no ?? null);
   const ordreTotal =
     ordreQuery.data?.orders?.reduce((s, o) => s + o.total, 0) ?? 0;
+  // §32a: "klar" = only orders in the "Klar til levering – uden aftale"
+  // bucket (no MAV, no date, status=klar, not En Primeur).
   const ordreKlar =
     ordreQuery.data?.orders
-      ?.filter((o) => o.status === "klar" && !o.isMav)
+      ?.filter((o) => bucketFor(o) === "klar")
       .reduce((s, o) => s + o.total, 0) ?? 0;
   const hasOrdrer = (ordreQuery.data?.orders?.length ?? 0) > 0;
 
@@ -960,20 +962,37 @@ export function OmsaetningSection({
 // 7. Åbne ordrer
 // ------------------------------------------------------------------
 
-// §29a: order bucket types and classification — module-level so they
-// don't trigger useMemo dependency warnings.
-type BucketKey = "afventer" | "reservation" | "mav" | "klar";
-const BUCKET_ORDER: BucketKey[] = ["klar", "mav", "afventer", "reservation"];
+// §32a: six buckets — first matching rule wins, in this order.
+type BucketKey =
+  | "en_primeur"
+  | "afventer"
+  | "reservation"
+  | "aftalt_mav"
+  | "aftalt_dato"
+  | "klar";
+const BUCKET_ORDER: BucketKey[] = [
+  "klar",
+  "aftalt_dato",
+  "aftalt_mav",
+  "reservation",
+  "afventer",
+  "en_primeur",
+];
 const BUCKET_LABEL: Record<BucketKey, string> = {
-  klar: "Klar til levering",
-  mav: "Skal leveres med andre varer (MAV)",
-  afventer: "Afventer ankomst",
+  en_primeur: "En Primeur",
+  afventer: "Afventer ankomst af varer",
   reservation: "I reservation",
+  aftalt_mav: "Aftalt levering – med andre varer",
+  aftalt_dato: "Aftalt levering – med dato",
+  klar: "Klar til levering – uden aftale",
 };
 function bucketFor(o: OpenOrderSummary): BucketKey {
+  // First matching rule wins, in priority order from the spec.
+  if (o.isEnPrimeur) return "en_primeur";
   if (o.status === "restordre") return "afventer";
   if (o.status === "reservation") return "reservation";
-  if (o.isMav) return "mav";
+  if (o.isMav) return "aftalt_mav";
+  if (o.oensketLevering != null) return "aftalt_dato";
   return "klar";
 }
 
@@ -1376,14 +1395,8 @@ function OrderRow({
             {/* §20 (30. sep 2026): Meta replaces StatusBadge — one text label
               per order, not a colored pill per line. Ten pills in a column
               was the visual noise we wanted to avoid. */}
-            <Meta>
-              {o.status === "reservation"
-                ? "I reservation"
-                : o.status === "klar"
-                  ? "Klar"
-                  : "Restordre"}
-              {o.isMav ? " · MAV" : ""}
-            </Meta>
+            {/* §32a: bucket label as Meta on order row. */}
+            <Meta>{BUCKET_LABEL[bucketFor(o)]}</Meta>
           </div>
           <div className="flex items-baseline justify-between gap-2 pl-[1.125rem]">
             <span className="min-w-0 truncate text-[length:var(--t-sec)] text-[var(--fg-2)]">

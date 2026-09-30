@@ -93,6 +93,9 @@ export interface OpenOrderSummary {
   /** §11d (30. sep 2026): notes from open_order_notes_lago, joined on
    *  ordre_nr, sorted by linje_nr. Raw text, no interpretation. */
   orderNotes: OrderNote[];
+  /** §32a (30. sep 2026): true when all visible lines have status=21
+   *  (En Primeur — agreed 1-2 years ahead). Used for bucket classification. */
+  isEnPrimeur: boolean;
 }
 
 export interface OrderNote {
@@ -419,12 +422,17 @@ export function useOpenOrders(vismaCustomerNo: string | null | undefined) {
         const isMav =
           synligeLines.length > 0 &&
           synligeLines.every((l) => l.levering === "1");
+        // §32a: En Primeur = all visible lines have status=21.
+        const isEnPrimeur =
+          synligeLines.length > 0 &&
+          synligeLines.every((l) => l.status === "21");
         out.push({
           ordre_nr,
           ordre_dato: synligeLines[0]?.ordre_dato ?? lines[0].ordre_dato,
           total,
           status: orderStatus,
           isMav,
+          isEnPrimeur,
           restLineCount: restLines.length,
           reservationAntal,
           oensketLevering,
