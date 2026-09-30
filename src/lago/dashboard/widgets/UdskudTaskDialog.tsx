@@ -97,7 +97,12 @@ function useUdskydTask() {
       }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["mine-opgaver"] });
+      // §36-fix: invalidate the actual query keys the widget uses.
+      // "mine-opgaver" was a stale name — the widget reads
+      // ["lago-mine-opgaver", salesId]. Broad prefix match covers
+      // all sales_id variants.
+      queryClient.invalidateQueries({ queryKey: ["lago-mine-opgaver"] });
+      queryClient.invalidateQueries({ queryKey: ["lago-sendt-videre"] });
       queryClient.invalidateQueries({ queryKey: ["tasks"] });
     },
   });

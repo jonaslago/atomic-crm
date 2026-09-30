@@ -987,6 +987,15 @@ const BUCKET_LABEL: Record<BucketKey, string> = {
   aftalt_dato: "Aftalt levering – med dato",
   klar: "Klar til levering – uden aftale",
 };
+// §38c: short explanation per bucket — must be true for us.
+const BUCKET_HINT: Record<BucketKey, string> = {
+  afventer: "mindst én linje mangler",
+  aftalt_dato: "dato aftalt med kunden",
+  aftalt_mav: "sendes samlet",
+  reservation: "trækkes løbende",
+  klar: "på lager, intet aftalt",
+  en_primeur: "forudbestilt, ikke ankommet",
+};
 function bucketFor(o: OpenOrderSummary): BucketKey {
   // §32h: first matching rule wins. Date before MAV — when a date is
   // set, the MAV flag is leftover, not a state. An order with both a
@@ -1086,44 +1095,12 @@ export function AabneOrdrerSection({
     return map;
   }, [orders]);
 
-  // §29d: "Klar til levering" open by default, rest closed.
-  // Session-state per customer for group expansion.
-  const groupStorageKey = `lago-ordre-groups-${companyId}`;
-  const [expandedGroups, setExpandedGroups] = useState<Set<BucketKey>>(() => {
-    try {
-      const raw = sessionStorage.getItem(groupStorageKey);
-      if (raw) return new Set(JSON.parse(raw) as BucketKey[]);
-    } catch {
-      /* ignore */
-    }
-    return new Set<BucketKey>();
-  });
-  const persistGroups = (next: Set<BucketKey>) => {
-    setExpandedGroups(next);
-    try {
-      sessionStorage.setItem(groupStorageKey, JSON.stringify([...next]));
-    } catch {
-      /* ignore */
-    }
-  };
-  const toggleGroup = (key: BucketKey) => {
-    const next = new Set(expandedGroups);
-    if (next.has(key)) next.delete(key);
-    else next.add(key);
-    persistGroups(next);
-  };
-
-  // §29d: fold all — expands/collapses all groups AND orders.
-  const allGroupsExpanded = BUCKET_ORDER.every(
-    (k) => !buckets.has(k) || expandedGroups.has(k),
-  );
+  // §38b: groups are always open — no group folding state needed.
+  // "Fold alle ud/ind" now only controls order-level expansion.
   const toggleAll = () => {
-    if (allGroupsExpanded && allExpanded) {
-      // §29c: reset to all collapsed (was ["klar"] before).
-      persistGroups(new Set());
+    if (allExpanded) {
       persistExpanded(new Set());
     } else {
-      persistGroups(new Set(BUCKET_ORDER));
       persistExpanded(new Set(orders.map((o) => o.ordre_nr)));
     }
   };
@@ -1170,9 +1147,7 @@ export function AabneOrdrerSection({
                 onClick={toggleAll}
                 className="text-[length:var(--t-meta)] font-medium text-[var(--fg-2)] hover:text-[var(--fg)] underline-offset-2 hover:underline"
               >
-                {allGroupsExpanded && allExpanded
-                  ? "Fold alle sammen"
-                  : "Fold alle ud"}
+                {allExpanded ? "Fold alle sammen" : "Fold alle ud"}
               </button>
             ) : undefined
           }
@@ -1196,7 +1171,7 @@ export function AabneOrdrerSection({
                   onClick={toggleAll}
                   className="text-[length:var(--t-meta)] font-medium text-[var(--fg-2)] hover:text-[var(--fg)] underline-offset-2 hover:underline"
                 >
-                  {allGroupsExpanded && allExpanded ? "Fold sammen" : "Fold ud"}
+                  {allExpanded ? "Fold sammen" : "Fold ud"}
                 </button>
               )}
             </span>
@@ -1238,12 +1213,11 @@ export function AabneOrdrerSection({
               Kommentér valgte
             </button>
           </div>
-          {/* §29a–b: grouped by bucket. Empty buckets hidden. */}
+          {/* §38b+c: buckets always open, with explanation in parens. */}
           {BUCKET_ORDER.map((bucketKey) => {
             const bucketOrders = buckets.get(bucketKey);
             if (!bucketOrders || bucketOrders.length === 0) return null;
             const bucketSum = bucketOrders.reduce((s, o) => s + o.total, 0);
-            const groupOpen = expandedGroups.has(bucketKey);
             const groupAllSelected = bucketOrders.every((o) =>
               selected.has(o.ordre_nr),
             );
@@ -1252,7 +1226,7 @@ export function AabneOrdrerSection({
                 key={bucketKey}
                 className="border-b border-[var(--line)] last:border-b-0"
               >
-                {/* §29b: group header row with count + amount. */}
+                {/* §38c: bucket header with hint + count + amount */}
                 <div className="flex items-center gap-2 py-3">
                   <input
                     type="checkbox"
@@ -1261,51 +1235,38 @@ export function AabneOrdrerSection({
                     aria-label={`Vælg alle i ${BUCKET_LABEL[bucketKey]}`}
                     className="h-4 w-4 shrink-0 cursor-pointer accent-[var(--ink)]"
                   />
-                  <button
-                    type="button"
-                    onClick={() => toggleGroup(bucketKey)}
-                    className="flex flex-1 items-center gap-2 text-left hover:bg-[var(--surface-1)] rounded-md -mx-1 px-1"
-                  >
-                    <span
-                      aria-hidden
-                      className={cn(
-                        "w-3 shrink-0 text-[var(--fg-3)] tabular-nums text-[11px] transition-transform",
-                        groupOpen && "rotate-90",
-                      )}
-                    >
-                      ▶
-                    </span>
+                  <span className="flex flex-1 flex-wrap items-baseline gap-x-2 gap-y-0.5">
                     <span className="font-semibold text-sm text-[var(--fg)]">
                       {BUCKET_LABEL[bucketKey]}
                     </span>
                     <span className="text-[length:var(--t-meta)] text-[var(--fg-3)]">
-                      {bucketOrders.length}{" "}
-                      {bucketOrders.length === 1 ? "ordre" : "ordrer"}
+                      ({BUCKET_HINT[bucketKey]})
                     </span>
-                    <span className="flex-1" />
-                    <span className="font-semibold text-sm tabular-nums text-[var(--fg)]">
-                      {kroner.format(bucketSum)}
-                    </span>
-                  </button>
+                  </span>
+                  <span className="shrink-0 text-[length:var(--t-meta)] text-[var(--fg-3)] whitespace-nowrap">
+                    {bucketOrders.length}{" "}
+                    {bucketOrders.length === 1 ? "ordre" : "ordrer"}
+                  </span>
+                  <span className="shrink-0 font-semibold text-sm tabular-nums text-[var(--fg)]">
+                    {kroner.format(bucketSum)}
+                  </span>
                 </div>
-                {/* Orders inside the group. */}
-                {groupOpen && (
-                  <div className="pl-6 pb-2">
-                    <RowGroup>
-                      {bucketOrders.map((o) => (
-                        <OrderRow
-                          key={o.ordre_nr}
-                          order={o}
-                          open={expanded.has(o.ordre_nr)}
-                          onToggle={() => toggleExpanded(o.ordre_nr)}
-                          selected={selected.has(o.ordre_nr)}
-                          onToggleSelect={() => toggleSelected(o.ordre_nr)}
-                          kommentarer={kommentarerPrOrdre.get(o.ordre_nr) ?? []}
-                        />
-                      ))}
-                    </RowGroup>
-                  </div>
-                )}
+                {/* §38b: orders always visible — no group folding. */}
+                <div className="pl-6 pb-2">
+                  <RowGroup>
+                    {bucketOrders.map((o) => (
+                      <OrderRow
+                        key={o.ordre_nr}
+                        order={o}
+                        open={expanded.has(o.ordre_nr)}
+                        onToggle={() => toggleExpanded(o.ordre_nr)}
+                        selected={selected.has(o.ordre_nr)}
+                        onToggleSelect={() => toggleSelected(o.ordre_nr)}
+                        kommentarer={kommentarerPrOrdre.get(o.ordre_nr) ?? []}
+                      />
+                    ))}
+                  </RowGroup>
+                </div>
               </div>
             );
           })}
@@ -1352,88 +1313,108 @@ function OrderRow({
   kommentarer: OrdreKommentar[];
 }) {
   const hasLines = o.lines.length > 0;
-  const chevron = open ? "▾" : "▸";
-  // Brief 75 tillæg G: reservations-ordrer bruger antal-baseret
-  // sammendrag ("30 stk. på reservation") — det er samtalen med
-  // kunden, ikke kroner. Restordrer bruger linje-tælling som før.
-  const summaryLabel =
-    o.status === "reservation"
-      ? `${o.reservationAntal} stk. på reservation`
-      : o.restLineCount > 0
-        ? `${o.restLineCount} ${o.restLineCount === 1 ? "linje" : "linjer"} afventer`
-        : null;
+  // §38a: one-line compact row. Middle column = why it's here.
+  // Only fields we have — never computed text.
+  const midParts: string[] = [];
+  if (o.status === "reservation") {
+    midParts.push(`${o.reservationAntal} stk. på reservation`);
+  } else if (o.restLineCount > 0) {
+    midParts.push(
+      `${o.restLineCount} ${o.restLineCount === 1 ? "linje" : "linjer"} afventer`,
+    );
+  }
+  if (o.note) midParts.push(o.note);
+  if (o.oensketLevering) {
+    const dateLabel = isPastDate(o.oensketLevering)
+      ? `Ønsket levering ${formatWeekdayDate(o.oensketLevering)} ⚠`
+      : `Ønsket levering ${formatWeekdayDate(o.oensketLevering)}`;
+    midParts.push(dateLabel);
+  }
+  const midText = midParts.join(" · ");
+  const toggleLabel = open ? "Skjul detaljer" : "Se detaljer";
+
   return (
-    <li className="flex flex-col gap-1">
-      {/* Brief 89 (28. sep 2026): afkrydsningsfelt pr. ordre — pladseret
-          udenfor toggle-knappen så en klik på checkbox ikke folder rækken
-          ud/ind. */}
-      <div className="flex items-start gap-2">
+    <li className="flex flex-col">
+      {/* §38a: compact one-line row. Desktop: three columns.
+          Mobile (<768px): two lines. */}
+      <div className="flex items-center gap-2 py-2">
         <input
           type="checkbox"
           checked={selected}
           onChange={onToggleSelect}
           aria-label={`Vælg ordre ${o.ordre_nr} til kommentar`}
-          className="mt-1 h-4 w-4 shrink-0 cursor-pointer accent-[var(--ink)]"
+          className="h-4 w-4 shrink-0 cursor-pointer accent-[var(--ink)]"
         />
+        {/* Clickable area — whole row toggles details */}
         <button
           type="button"
           onClick={onToggle}
           disabled={!hasLines}
-          className="flex flex-1 flex-col gap-0.5 text-left"
+          className="flex flex-1 items-baseline gap-3 text-left min-w-0"
         >
-          <div className="flex items-center justify-between gap-2">
-            <div className="flex min-w-0 items-baseline gap-1.5">
-              {hasLines && (
-                <span
-                  aria-hidden
-                  className="w-3 shrink-0 text-[var(--fg-3)] tabular-nums"
-                >
-                  {chevron}
-                </span>
-              )}
-              <span className="text-[length:var(--t-meta)] text-[var(--fg-3)]">
-                Ordre #{o.ordre_nr}
-              </span>
-            </div>
-            {/* §32g: bucket label removed from order row — the bucket
-                header carries the status. Only exceptions shown:
-                overdue date (red) and "N linjer afventer". */}
-          </div>
-          <div className="flex items-baseline justify-between gap-2 pl-[1.125rem]">
-            <span className="min-w-0 truncate text-[length:var(--t-sec)] text-[var(--fg-2)]">
-              {dateShort(o.ordre_dato)}
-              {summaryLabel && ` · ${summaryLabel}`}
+          {/* Left: fixed width — order nr + date */}
+          <span className="shrink-0 text-[length:var(--t-meta)] text-[var(--fg-3)] whitespace-nowrap hidden md:inline">
+            Ordre #{o.ordre_nr} · {dateShort(o.ordre_dato)}
+          </span>
+          {/* Mobile: order nr + amount on first line */}
+          <span className="md:hidden flex flex-1 items-baseline justify-between gap-2">
+            <span className="text-[length:var(--t-meta)] text-[var(--fg-3)]">
+              #{o.ordre_nr} · {dateShort(o.ordre_dato)}
             </span>
-            <span className="shrink-0 text-sm text-[var(--fg)] tabular-nums">
+            <span className="shrink-0 text-sm font-medium text-[var(--fg)] tabular-nums">
               {kroner.format(o.total)}
             </span>
-          </div>
+          </span>
+          {/* Middle: why it's here — desktop only on same line */}
+          {midText && (
+            <span
+              className={cn(
+                "min-w-0 truncate text-[length:var(--t-sec)]",
+                o.oensketLevering && isPastDate(o.oensketLevering)
+                  ? "text-[var(--st-red-fg)]"
+                  : "text-[var(--fg-2)]",
+                "hidden md:inline",
+              )}
+            >
+              {midText}
+            </span>
+          )}
+          {/* Spacer */}
+          <span className="hidden md:inline flex-1" />
+          {/* Right: amount — desktop */}
+          <span className="hidden md:inline shrink-0 text-sm font-medium text-[var(--fg)] tabular-nums">
+            {kroner.format(o.total)}
+          </span>
         </button>
+        {/* §38f: "Se detaljer" replaces chevron */}
+        {hasLines && (
+          <button
+            type="button"
+            onClick={onToggle}
+            className="shrink-0 text-[length:var(--t-meta)] font-medium text-[var(--fg-2)] hover:text-[var(--fg)] whitespace-nowrap underline-offset-2 hover:underline"
+          >
+            {toggleLabel}
+          </button>
+        )}
       </div>
-      {o.note && (
-        <p className="text-[length:var(--t-sec)] pl-[1.75rem] text-[var(--fg-2)] italic">
-          {o.note}
-        </p>
-      )}
-      {o.oensketLevering && (
+      {/* Mobile middle line */}
+      {midText && (
         <p
           className={cn(
-            "text-[length:var(--t-sec)] pl-[1.75rem]",
-            isPastDate(o.oensketLevering)
-              ? "text-[var(--st-red-fg)] font-medium"
+            "md:hidden pl-6 pb-1 truncate text-[length:var(--t-sec)]",
+            o.oensketLevering && isPastDate(o.oensketLevering)
+              ? "text-[var(--st-red-fg)]"
               : "text-[var(--fg-2)]",
           )}
         >
-          Ønsket levering {formatWeekdayDate(o.oensketLevering)}
+          {midText}
         </p>
       )}
-      {/* Brief 89 (28. sep 2026): eksisterende afventende kommentarer på
-          ordren. Vises som lille grøn stribe med hensigt + note + hvem
-          skrev den. */}
+      {/* Kommentarer */}
       {kommentarer.map((k) => (
         <div
           key={k.id}
-          className="ml-[1.75rem] rounded-md border-l-2 border-[var(--st-green)] bg-[var(--surface-1)] px-3 py-2 text-[length:var(--t-sec)]"
+          className="ml-6 rounded-md border-l-2 border-[var(--st-green)] bg-[var(--surface-1)] px-3 py-2 text-[length:var(--t-sec)]"
         >
           <div className="flex items-baseline gap-2">
             <span className="font-medium text-[var(--fg)]">
@@ -1459,10 +1440,9 @@ function OrderRow({
           </p>
         </div>
       ))}
-      {/* §29f: notes above order lines — read why before what. Line
-          count shown only when folded. */}
+      {/* Notes above lines */}
       {open && o.orderNotes.length > 0 && (
-        <div className="mt-1 pl-[1.125rem]">
+        <div className="mt-1 pl-6">
           <ExpandableNote
             text={o.orderNotes.map((n) => n.beskrivelse).join("\n")}
             clampLines={3}
