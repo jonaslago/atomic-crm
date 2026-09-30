@@ -426,6 +426,18 @@ function CustomerRow({
   const salesMobile = shortenSalesName(salesFull);
   const statusText = besoegsstatusText(priority);
   const statusColor = besoegsstatusColorClass(priority);
+  // §26b (30. sep 2026): tooltip on planned-visit icon — "Camilla · 1. okt".
+  const plannedTooltip = row.next_planned_at
+    ? [
+        salesFull,
+        new Date(row.next_planned_at).toLocaleDateString("da-DK", {
+          day: "numeric",
+          month: "short",
+        }),
+      ]
+        .filter(Boolean)
+        .join(" · ")
+    : undefined;
   return (
     <button
       type="button"
@@ -453,12 +465,14 @@ function CustomerRow({
             </span>
             {segment && <SegmentPill segment={segment} />}
             {row.next_planned_at && (
-              <Icon
-                icon={CalendarClock}
-                size="sm"
-                className="shrink-0 text-[var(--ink)]"
-                aria-label="Planlagt aftale"
-              />
+              <span title={plannedTooltip}>
+                <Icon
+                  icon={CalendarClock}
+                  size="sm"
+                  className="shrink-0 text-[var(--ink)]"
+                  aria-label={plannedTooltip ?? "Planlagt aftale"}
+                />
+              </span>
             )}
           </div>
           <p className="mt-1 truncate text-[length:var(--t-meta)] text-[var(--fg-3)]">
@@ -527,15 +541,18 @@ function CustomerRow({
         >
           {daysCellText(row)}
         </span>
-        {/* §26 (30. sep 2026): planned-visit icon in its own column so it
-            doesn't push the customer name. Centered, empty when no plan. */}
-        <span className="flex items-center justify-center">
+        {/* §26 (30. sep 2026): planned-visit icon in its own column.
+            §26b: tooltip with seller name + date. */}
+        <span
+          className="flex items-center justify-center"
+          title={plannedTooltip}
+        >
           {row.next_planned_at && (
             <Icon
               icon={CalendarClock}
               size="sm"
               className="text-[var(--ink)]"
-              aria-label="Planlagt aftale"
+              aria-label={plannedTooltip ?? "Planlagt aftale"}
             />
           )}
         </span>
