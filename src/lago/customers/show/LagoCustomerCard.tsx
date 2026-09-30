@@ -995,13 +995,6 @@ export function AabneOrdrerSection({
   };
   const allExpanded =
     orders.length > 0 && orders.every((o) => expanded.has(o.ordre_nr));
-  const toggleAll = () => {
-    if (allExpanded) {
-      persistExpanded(new Set());
-    } else {
-      persistExpanded(new Set(orders.map((o) => o.ordre_nr)));
-    }
-  };
   // Brief 89 (28. sep 2026): flervalg til "Kommentér valgte". Ét afkryds-
   // felt pr. ordre. Én kommentar → én række pr. ordre (så de kan lukkes
   // hver for sig). "Kommentér valgte"-knap er aktiv når mindst én er valgt.
