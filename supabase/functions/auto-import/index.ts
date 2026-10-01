@@ -18,6 +18,11 @@
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { supabaseAdmin } from "../_shared/supabaseAdmin.ts";
+import {
+  importProdukttransaktioner,
+  importAabneOrdrer,
+  importKunder,
+} from "./importers.ts";
 
 // Microsoft Graph constants — secrets from Supabase env
 const TENANT_ID = Deno.env.get("MS_GRAPH_TENANT_ID") ?? "";
@@ -282,23 +287,124 @@ Deno.serve(async (req) => {
           });
       }
 
-      // TODO §95-2: parse files + run gates + import
-      // For now, log that we received the mail and files
-      await supabaseAdmin.from("sync_runs_lago").insert({
-        datasaet: "open_orders",
-        kilde: "auto-import",
-        raekker: 0,
-        er_testdata: false,
-        note: `msgid:${msg.internetMessageId} · ${fileTypes.map((f) => f.name).join(", ")} · placeholder — parsing not yet wired`,
-      });
+      // §95-2: parse + gate + import each file type
+      const importResults: string[] = [];
+      let anyFailed = false;
 
-      await markAsRead(token, msg.id);
+      // Convert attachments to bytes map
+      const bytesMap = new Map<string, Uint8Array>();
+      for (const f of fileTypes) {
+        const bytes = Uint8Array.from(
+          atob(f.attachment.contentBytes),
+          (c) => c.charCodeAt(0),
+        );
+        bytesMap.set(f.type!, bytes);
+      }
+
+      // Import Produkttransaktioner
+      if (bytesMap.has("produkttransaktioner")) {
+        try {
+          const r = await importProdukttransaktioner(
+            bytesMap.get("produkttransaktioner")!,
+            supabaseAdmin,
+          );
+          if (r.ok) {
+            importResults.push(
+              `Produkttransaktioner: ${r.rowsImported} rækker. ${r.detail ?? ""}`,
+            );
+            await supabaseAdmin.from("sync_runs_lago").insert({
+              datasaet: "sales_monthly",
+              kilde: "auto-import",
+              raekker: r.rowsImported,
+              er_testdata: false,
+              note: `msgid:${msg.internetMessageId} · ${r.detail ?? ""}`,
+            });
+          } else {
+            anyFailed = true;
+            importResults.push(
+              `Produkttransaktioner FEJLET: ${r.gateFailure ?? "ukendt"}`,
+            );
+          }
+        } catch (e) {
+          anyFailed = true;
+          importResults.push(
+            `Produkttransaktioner FEJL: ${e instanceof Error ? e.message : String(e)}`,
+          );
+        }
+      }
+
+      // Import Åbne ordrer + noter (transactional via RPC)
+      if (bytesMap.has("aabne_ordrer")) {
+        try {
+          const r = await importAabneOrdrer(
+            bytesMap.get("aabne_ordrer")!,
+            bytesMap.get("aabne_ordrer_noter") ?? null,
+            supabaseAdmin,
+          );
+          if (r.ok) {
+            importResults.push(
+              `Åbne ordrer: ${r.rowsImported} rækker. ${r.detail ?? ""}`,
+            );
+            await supabaseAdmin.from("sync_runs_lago").insert({
+              datasaet: "open_orders",
+              kilde: "auto-import",
+              raekker: r.rowsImported,
+              er_testdata: false,
+              note: `msgid:${msg.internetMessageId} · ${r.detail ?? ""}`,
+            });
+          } else {
+            anyFailed = true;
+            importResults.push(
+              `Åbne ordrer FEJLET: ${r.gateFailure ?? "ukendt"}`,
+            );
+          }
+        } catch (e) {
+          anyFailed = true;
+          importResults.push(
+            `Åbne ordrer FEJL: ${e instanceof Error ? e.message : String(e)}`,
+          );
+        }
+      }
+
+      // Import Kunder (natligt only)
+      if (bytesMap.has("kunder")) {
+        try {
+          const r = await importKunder(
+            bytesMap.get("kunder")!,
+            supabaseAdmin,
+          );
+          if (r.ok) {
+            importResults.push(
+              `Kunder: ${r.rowsImported} rækker. ${r.detail ?? ""}`,
+            );
+          } else {
+            importResults.push(
+              `Kunder: ${r.gateFailure ?? "ikke implementeret serverside"}`,
+            );
+          }
+        } catch (e) {
+          importResults.push(
+            `Kunder FEJL: ${e instanceof Error ? e.message : String(e)}`,
+          );
+        }
+      }
+
+      // Produkter (natligt only) — placeholder
+      if (bytesMap.has("produkter")) {
+        importResults.push("Produkter: kun natlig manuel import");
+      }
+
+      // Mark as read only if no critical failure
+      if (!anyFailed) {
+        await markAsRead(token, msg.id);
+      }
+
       results.push({
         messageId: msg.internetMessageId,
         subject: msg.subject,
         files: fileTypes.map((f) => f.name),
-        status: "imported",
-        detail: "Files stored, parsing placeholder",
+        status: anyFailed ? "error" : "imported",
+        detail: importResults.join(" | "),
       });
     }
 
