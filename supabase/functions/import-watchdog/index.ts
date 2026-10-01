@@ -16,8 +16,21 @@ const ALERT_THRESHOLD_HOURS = 8;
 const TENANT_ID = Deno.env.get("MS_GRAPH_TENANT_ID") ?? "";
 const CLIENT_ID = Deno.env.get("MS_GRAPH_CLIENT_ID") ?? "";
 const CLIENT_SECRET = Deno.env.get("MS_GRAPH_CLIENT_SECRET") ?? "";
-const ALERT_RECIPIENTS = ["jonas@lago.dk", "simon@lago.dk"];
 const SEND_FROM = "crm-automate@lago.dk";
+
+async function fetchAlertRecipients(): Promise<string[]> {
+  const { data } = await supabaseAdmin
+    .from("lago_settings")
+    .select("value")
+    .eq("key", "alert_recipients")
+    .maybeSingle();
+  if (data?.value && Array.isArray(data.value)) {
+    return data.value.filter(
+      (v: unknown) => typeof v === "string" && v.includes("@"),
+    );
+  }
+  return [];
+}
 
 async function getGraphToken(): Promise<string> {
   const url = `https://login.microsoftonline.com/${TENANT_ID}/oauth2/v2.0/token`;
@@ -38,13 +51,15 @@ async function getGraphToken(): Promise<string> {
 }
 
 async function sendAlert(subject: string, body: string): Promise<void> {
+  const recipients = await fetchAlertRecipients();
+  if (recipients.length === 0) return;
   const token = await getGraphToken();
   const url = `https://graph.microsoft.com/v1.0/users/${SEND_FROM}/sendMail`;
   const mailBody = {
     message: {
       subject,
       body: { contentType: "Text", content: body },
-      toRecipients: ALERT_RECIPIENTS.map((email) => ({
+      toRecipients: recipients.map((email) => ({
         emailAddress: { address: email },
       })),
     },
@@ -123,9 +138,9 @@ Deno.serve(async (req) => {
     );
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    return new Response(
-      JSON.stringify({ error: message }),
-      { status: 500, headers: { "Content-Type": "application/json" } },
-    );
+    return new Response(JSON.stringify({ error: message }), {
+      status: 500,
+      headers: { "Content-Type": "application/json" },
+    });
   }
 });

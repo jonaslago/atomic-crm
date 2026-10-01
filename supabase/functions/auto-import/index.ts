@@ -18,28 +18,25 @@
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { supabaseAdmin } from "../_shared/supabaseAdmin.ts";
-import {
-  importProdukttransaktioner,
-  importAabneOrdrer,
-  importKunder,
-} from "./importers.ts";
+import { importProdukttransaktioner, importAabneOrdrer } from "./importers.ts";
 
 // Microsoft Graph constants — secrets from Supabase env
 const TENANT_ID = Deno.env.get("MS_GRAPH_TENANT_ID") ?? "";
 const CLIENT_ID = Deno.env.get("MS_GRAPH_CLIENT_ID") ?? "";
 const CLIENT_SECRET = Deno.env.get("MS_GRAPH_CLIENT_SECRET") ?? "";
 const MAILBOX = "crm-automate@lago.dk";
+const SEND_FROM = "crm-automate@lago.dk";
 const SENDER_FILTER = "noreply@onestopreporting.com";
 const SUBJECT_PREFIX = "Resultater fra Publisher-job Data til CRM";
 
 // File name → import type mapping
 const FILE_MAP: Record<string, string> = {
-  "Kundeudtræk": "kunder",
-  "Produkter": "produkter",
+  Kundeudtræk: "kunder",
+  Produkter: "produkter",
   "Produkter - udgået": "produkter_udgaaet",
   "Åbne ordrelinier": "aabne_ordrer",
   "Åbne ordrelinier - noter": "aabne_ordrer_noter",
-  "Produkttransaktioner": "produkttransaktioner",
+  Produkttransaktioner: "produkttransaktioner",
 };
 
 /** Identify import type from attachment filename.
@@ -48,7 +45,10 @@ const FILE_MAP: Record<string, string> = {
  *  "Produkter" matching before "Produkter - udgået". */
 function identifyFile(filename: string): string | null {
   // Strip .xlsx and any trailing dots/spaces (OSR sometimes adds extra dots)
-  const base = filename.replace(/\.xlsx$/i, "").replace(/[.\s]+$/, "").trim();
+  const base = filename
+    .replace(/\.xlsx$/i, "")
+    .replace(/[.\s]+$/, "")
+    .trim();
   // Sort patterns by length descending so longer matches win
   const sorted = Object.entries(FILE_MAP).sort(
     (a, b) => b[0].length - a[0].length,
@@ -85,6 +85,54 @@ async function getGraphToken(): Promise<string> {
   }
   const data: GraphToken = await res.json();
   return data.access_token;
+}
+
+// ---------- Receipt/error mail ----------
+
+async function fetchAlertRecipients(): Promise<string[]> {
+  const { data } = await supabaseAdmin
+    .from("lago_settings")
+    .select("value")
+    .eq("key", "alert_recipients")
+    .maybeSingle();
+  if (data?.value && Array.isArray(data.value)) {
+    return data.value.filter(
+      (v: unknown) => typeof v === "string" && v.includes("@"),
+    );
+  }
+  return [];
+}
+
+async function sendReceiptMail(
+  token: string,
+  subject: string,
+  body: string,
+): Promise<void> {
+  const recipients = await fetchAlertRecipients();
+  if (recipients.length === 0) return; // no recipients configured
+  const url = `https://graph.microsoft.com/v1.0/users/${SEND_FROM}/sendMail`;
+  const mailBody = {
+    message: {
+      subject,
+      body: { contentType: "Text", content: body },
+      toRecipients: recipients.map((email) => ({
+        emailAddress: { address: email },
+      })),
+    },
+    saveToSentItems: false,
+  };
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(mailBody),
+  });
+  if (!res.ok) {
+    // Log but don't throw — a failed receipt must not block the import.
+    console.error(`SendMail error ${res.status}: ${await res.text()}`);
+  }
 }
 
 interface GraphMessage {
@@ -138,7 +186,11 @@ async function listAttachments(
     throw new Error(`Graph list-attachments error ${res.status}: ${text}`);
   }
   const data = await res.json();
-  return (data.value ?? []) as Array<{ id: string; name: string; size: number }>;
+  return (data.value ?? []) as Array<{
+    id: string;
+    name: string;
+    size: number;
+  }>;
 }
 
 /** Download one attachment's content as raw bytes via the $value
@@ -150,8 +202,7 @@ async function downloadAttachment(
   attachmentId: string,
 ): Promise<Uint8Array> {
   // Try $value endpoint first (binary stream, much less memory)
-  const valueUrl =
-    `https://graph.microsoft.com/v1.0/users/${MAILBOX}/messages/${messageId}/attachments/${attachmentId}/$value`;
+  const valueUrl = `https://graph.microsoft.com/v1.0/users/${MAILBOX}/messages/${messageId}/attachments/${attachmentId}/$value`;
   const valueRes = await fetch(valueUrl, {
     headers: { Authorization: `Bearer ${token}` },
   });
@@ -160,8 +211,7 @@ async function downloadAttachment(
     return new Uint8Array(buf);
   }
   // Fallback: JSON with base64
-  const url =
-    `https://graph.microsoft.com/v1.0/users/${MAILBOX}/messages/${messageId}/attachments/${attachmentId}`;
+  const url = `https://graph.microsoft.com/v1.0/users/${MAILBOX}/messages/${messageId}/attachments/${attachmentId}`;
   const res = await fetch(url, {
     headers: { Authorization: `Bearer ${token}` },
   });
@@ -170,10 +220,7 @@ async function downloadAttachment(
     throw new Error(`Graph download error ${res.status}: ${text}`);
   }
   const data = await res.json();
-  return Uint8Array.from(
-    atob(data.contentBytes),
-    (c) => c.charCodeAt(0),
-  );
+  return Uint8Array.from(atob(data.contentBytes), (c) => c.charCodeAt(0));
 }
 
 async function markAsRead(token: string, messageId: string): Promise<void> {
@@ -190,17 +237,6 @@ async function markAsRead(token: string, messageId: string): Promise<void> {
     const text = await res.text();
     throw new Error(`Graph mark-read error ${res.status}: ${text}`);
   }
-}
-
-// ---------- Idempotency ----------
-
-async function isAlreadyProcessed(internetMessageId: string): Promise<boolean> {
-  const { data } = await supabaseAdmin
-    .from("sync_runs_lago")
-    .select("id", { head: true, count: "exact" })
-    .eq("note", `msgid:${internetMessageId}`)
-    .limit(1);
-  return (data as unknown as number) > 0 || false;
 }
 
 // ---------- Main handler ----------
@@ -223,19 +259,29 @@ Deno.serve(async (req) => {
 
     // Debug mode: list all unread mails without subject filter
     let body: Record<string, unknown> = {};
-    try { body = await req.json(); } catch { /* no body */ }
+    try {
+      body = await req.json();
+    } catch {
+      /* no body */
+    }
     // Mark a specific mail as unread (for retry/testing)
     if (typeof body?.mark_unread === "string") {
       const url = `https://graph.microsoft.com/v1.0/users/${MAILBOX}/messages/${body.mark_unread}`;
       const res = await fetch(url, {
         method: "PATCH",
-        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
         body: JSON.stringify({ isRead: false }),
       });
-      return new Response(JSON.stringify({
-        ok: res.ok,
-        status: res.status,
-      }), { headers: { "Content-Type": "application/json" } });
+      return new Response(
+        JSON.stringify({
+          ok: res.ok,
+          status: res.status,
+        }),
+        { headers: { "Content-Type": "application/json" } },
+      );
     }
 
     if (body?.debug === true) {
@@ -248,18 +294,23 @@ Deno.serve(async (req) => {
       const diagRes = await fetch(diagUrl, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      const diagData = diagRes.ok ? await diagRes.json() : { error: await diagRes.text() };
-      return new Response(JSON.stringify({
-        all_recent: ((diagData.value ?? []) as GraphMessage[]).map((m) => ({
-          id: m.id,
-          internetMessageId: m.internetMessageId,
-          subject: m.subject,
-          from: m.from?.emailAddress?.address ?? null,
-          received: m.receivedDateTime,
-          hasAttachments: m.hasAttachments,
-          isRead: m.isRead,
-        })),
-      }), { headers: { "Content-Type": "application/json" } });
+      const diagData = diagRes.ok
+        ? await diagRes.json()
+        : { error: await diagRes.text() };
+      return new Response(
+        JSON.stringify({
+          all_recent: ((diagData.value ?? []) as GraphMessage[]).map((m) => ({
+            id: m.id,
+            internetMessageId: m.internetMessageId,
+            subject: m.subject,
+            from: m.from?.emailAddress?.address ?? null,
+            received: m.receivedDateTime,
+            hasAttachments: m.hasAttachments,
+            isRead: m.isRead,
+          })),
+        }),
+        { headers: { "Content-Type": "application/json" } },
+      );
     }
 
     const allMessages = await fetchUnreadMails(token);
@@ -273,7 +324,10 @@ Deno.serve(async (req) => {
 
     if (messages.length === 0) {
       return new Response(
-        JSON.stringify({ status: "no_new_mail", checked: new Date().toISOString() }),
+        JSON.stringify({
+          status: "no_new_mail",
+          checked: new Date().toISOString(),
+        }),
         { headers: { "Content-Type": "application/json" } },
       );
     }
@@ -326,7 +380,11 @@ Deno.serve(async (req) => {
       // All produkttransaktioner files are now 7-day windows (<1MB).
       // No size filter needed — Jonas confirmed 1. okt.
       const fileTypes = xlsxMeta
-        .map((a) => ({ name: a.name, type: identifyFile(a.name), attachmentId: a.id }))
+        .map((a) => ({
+          name: a.name,
+          type: identifyFile(a.name),
+          attachmentId: a.id,
+        }))
         .filter((f) => f.type != null);
 
       if (fileTypes.length === 0) {
@@ -361,7 +419,11 @@ Deno.serve(async (req) => {
       // is ~7 days of data (few thousand rows, <1MB), not 60k.
       // Deleted after 30 days — they contain customer names and amounts.
       for (const f of fileTypes) {
-        const storeBytes = await downloadAttachment(token, msg.id, f.attachmentId);
+        const storeBytes = await downloadAttachment(
+          token,
+          msg.id,
+          f.attachmentId,
+        );
         const path = `auto-import/${new Date().toISOString().slice(0, 10)}/${msg.internetMessageId}/${f.name}`;
         await supabaseAdmin.storage
           .from("attachments")
@@ -377,9 +439,7 @@ Deno.serve(async (req) => {
 
       // Build a lookup from type → attachmentId. Files are downloaded
       // one at a time during import to stay within memory limits.
-      const idByType = new Map(
-        fileTypes.map((f) => [f.type!, f.attachmentId]),
-      );
+      const idByType = new Map(fileTypes.map((f) => [f.type!, f.attachmentId]));
       /** Download one file on demand. */
       const getBytes = (type: string) =>
         downloadAttachment(token, msg.id, idByType.get(type)!);
@@ -423,7 +483,11 @@ Deno.serve(async (req) => {
             const noteBytes = idByType.has("aabne_ordrer_noter")
               ? await getBytes("aabne_ordrer_noter")
               : null;
-            const r = await importAabneOrdrer(ordreBytes, noteBytes, supabaseAdmin);
+            const r = await importAabneOrdrer(
+              ordreBytes,
+              noteBytes,
+              supabaseAdmin,
+            );
             if (r.ok) {
               await logRun("open_orders", r.rowsImported, r.detail ?? "");
               importResults.push(
@@ -431,9 +495,7 @@ Deno.serve(async (req) => {
               );
             } else {
               // Non-fatal for now — ordrer import is being built
-              importResults.push(
-                `Åbne ordrer: ${r.gateFailure ?? "skipped"}`,
-              );
+              importResults.push(`Åbne ordrer: ${r.gateFailure ?? "skipped"}`);
             }
           } catch (e) {
             importResults.push(
@@ -447,7 +509,9 @@ Deno.serve(async (req) => {
         }
 
         if (idByType.has("produkter")) {
-          importResults.push("Produkter: natlig manuel import (auto ikke bygget)");
+          importResults.push(
+            "Produkter: natlig manuel import (auto ikke bygget)",
+          );
         }
 
         // §95 §3e: mark as read ONLY after everything succeeded,
@@ -455,24 +519,68 @@ Deno.serve(async (req) => {
         // we land in catch and the mail stays unread.
         await markAsRead(token, msg.id);
 
+        const successDetail = importResults.join(" | ");
         results.push({
           messageId: msg.internetMessageId,
           subject: msg.subject,
           files: fileTypes.map((f) => f.name),
           status: "imported",
-          detail: importResults.join(" | "),
+          detail: successDetail,
         });
+
+        // §96 receipt mail — success
+        try {
+          const now = new Date().toISOString().replace("T", " ").slice(0, 19);
+          await sendReceiptMail(
+            token,
+            `✅ CRM-import ${now}`,
+            [
+              `Import gennemført ${now}`,
+              "",
+              ...importResults,
+              "",
+              `Filer: ${fileTypes.map((f) => f.name).join(", ")}`,
+            ].join("\n"),
+          );
+        } catch (mailErr) {
+          console.error("Receipt mail failed:", mailErr);
+        }
       } catch (importErr) {
+        const errMsg =
+          importErr instanceof Error
+            ? importErr.message
+            : typeof importErr === "object" && importErr !== null
+              ? JSON.stringify(importErr)
+              : String(importErr);
         // Import or logging failed — mail stays unread for retry.
         results.push({
           messageId: msg.internetMessageId,
           subject: msg.subject,
           files: fileTypes.map((f) => f.name),
           status: "error",
-          detail: importErr instanceof Error
-            ? importErr.message
-            : String(importErr),
+          detail: errMsg,
         });
+
+        // §96 error mail
+        try {
+          const now = new Date().toISOString().replace("T", " ").slice(0, 19);
+          await sendReceiptMail(
+            token,
+            `❌ CRM-import fejlede ${now}`,
+            [
+              `Import fejlede ${now}`,
+              "",
+              `Fejl: ${errMsg}`,
+              "",
+              `Filer: ${fileTypes.map((f) => f.name).join(", ")}`,
+              "",
+              "Mailen er IKKE markeret som læst — næste kørsel prøver igen.",
+              "Den manuelle import virker stadig: crm.lago.dk → Indstillinger → Import.",
+            ].join("\n"),
+          );
+        } catch (mailErr) {
+          console.error("Error mail failed:", mailErr);
+        }
       }
     }
 
@@ -481,9 +589,9 @@ Deno.serve(async (req) => {
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    return new Response(
-      JSON.stringify({ error: message }),
-      { status: 500, headers: { "Content-Type": "application/json" } },
-    );
+    return new Response(JSON.stringify({ error: message }), {
+      status: 500,
+      headers: { "Content-Type": "application/json" },
+    });
   }
 });
