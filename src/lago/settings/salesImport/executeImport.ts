@@ -95,6 +95,12 @@ export async function importProdukttransaktioner(
 ): Promise<{ rowsWritten: number }> {
   const supabase = getSupabaseClient();
 
+  // 🔴 RULE (§95, 1. okt 2026): sales_monthly_lago is UPSERT ONLY.
+  // NEVER DELETE. The hourly file may contain only 7 days of data,
+  // but the table holds three years of revenue history from 2024-01-01.
+  // A DELETE would wipe the entire history. This is different from
+  // open_orders_lago which uses transactional replace (snapshot).
+  //
   // Idempotent upsert på (kundenr, år, måned, salgstype). Vi
   // OVERSKRIVER belob — hvis samme nøgle sendes to gange, vinder
   // sidste værdi (matches importen af "kør igen med rettet fil").

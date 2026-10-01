@@ -251,7 +251,16 @@ export async function importProdukttransaktioner(
     return { ok: false, rowsInFile: rowsSeen, rowsImported: 0, gateFailure };
   }
 
-  // Upsert in batches
+  // 🔴 RULE (§95, 1. okt 2026): sales_monthly_lago is UPSERT ONLY.
+  // NEVER DELETE. The file may contain only 7 days of data (hourly job),
+  // but the table holds three years of revenue history from 2024-01-01.
+  // A DELETE would wipe the entire history because the file is a window,
+  // not a snapshot. This is different from open_orders_lago, which IS a
+  // snapshot and uses transactional replace (replace_open_orders RPC).
+  //
+  //   open_orders_lago + notes  → replace entire table, one transaction
+  //   sales_monthly_lago        → upsert only, never delete
+  //
   const BATCH = 500;
   for (let i = 0; i < payload.length; i += BATCH) {
     const batch = payload.slice(i, i + BATCH).map((r) => ({

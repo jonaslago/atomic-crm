@@ -293,10 +293,21 @@ Deno.serve(async (req) => {
         continue;
       }
 
-      // TODO: Store raw files in Supabase Storage for replay.
-      // Temporarily disabled to reduce peak memory — decoding all
-      // attachments for storage AND parsing doubles the footprint.
-      // Re-enable after confirming parsing fits in memory alone.
+      // §95 §3c: store raw files in Supabase Storage for replay.
+      // Downloaded one at a time to limit peak memory. The hourly file
+      // is ~7 days of data (few thousand rows, <1MB), not 60k.
+      // Deleted after 30 days — they contain customer names and amounts.
+      for (const f of fileTypes) {
+        const storeBytes = await downloadAttachment(token, msg.id, f.attachmentId);
+        const path = `auto-import/${new Date().toISOString().slice(0, 10)}/${msg.internetMessageId}/${f.name}`;
+        await supabaseAdmin.storage
+          .from("attachments")
+          .upload(path, storeBytes, {
+            contentType:
+              "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            upsert: true,
+          });
+      }
 
       // §95-2: parse + gate + import each file type
       const importResults: string[] = [];
