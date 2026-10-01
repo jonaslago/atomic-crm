@@ -111,10 +111,12 @@ export const WIDGETS: Record<string, WidgetDefinition> = {
   // lukke en opgave sælgeren havde sendt til dem) og viser oprindelsen
   // pr. række: "Fra Peter, 24. sep" hvis markeren står i teksten,
   // "Egen" hvis assign matcher aktøren, "Ikke tildelt" ellers.
+  // §31b: renamed to "Kontorets opgaver" now that kontor also has
+  // "Mine opgaver". The distinction: mine = tildelt mig. Kontorets =
+  // tildelt kontoret, men ikke mig.
   opfoelgninger_kontor: {
-    title: "Åbne opgaver",
-    subtitle:
-      "Udestående opgaver — sendt fra sælgerne eller oprettet af kontoret",
+    title: "Kontorets opgaver",
+    subtitle: "Kontorets fælles kø — overskredne og inden for 7 dage",
     width: "wide",
     component: OpfoelgningerKontorWidget,
   },

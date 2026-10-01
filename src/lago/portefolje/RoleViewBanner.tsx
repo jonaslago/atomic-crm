@@ -37,7 +37,11 @@ export function RoleViewBanner() {
     >
       <Icon icon={Eye} size="sm" className="shrink-0 text-[var(--fg-2)]" />
       <p className="min-w-0 flex-1 text-sm">
-        Du ser {ROLE_LABELS[viewRole]} forside med dine egne data.
+        {/* §31b: kontor's banner was wrong — kontorets kø is not "dine
+            egne data". The queue belongs to the team. */}
+        {viewRole === "kontor"
+          ? "Du ser kontorets forside. Dine egne tal, kontorets fælles lister."
+          : `Du ser ${ROLE_LABELS[viewRole]} forside med dine egne data.`}
       </p>
       <Button
         variant="ghost"

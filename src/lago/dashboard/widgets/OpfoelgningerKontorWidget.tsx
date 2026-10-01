@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { getSupabaseClient } from "@/components/atomic-crm/providers/supabase/supabase";
 import { useActorSalesId } from "@/lago/portefolje/useActorSalesId";
 import { useAuthUserId } from "@/lago/portefolje/useAuthUserId";
+import { useViewSalesId } from "@/lago/portefolje/PortefoljeContext";
 import { readErrorMessage } from "@/lago/ui/errorMessage";
 
 import { WidgetShell } from "../WidgetShell";
@@ -44,13 +45,19 @@ interface OpfoelgningRow {
   due_date: string | null;
   contact_id: number | null;
   sales_id: number | null;
-  sales: { id: number; first_name: string | null; last_name: string | null } | null;
+  sales: {
+    id: number;
+    first_name: string | null;
+    last_name: string | null;
+  } | null;
 }
 
 const CLIP_TO = 5;
 const HANDOFF_MARKER = "— Sendt til kontoret";
 
-async function fetchOpfoelgninger(): Promise<{
+// §31b: excludeMySalesId filters out the viewer's own tasks so they
+// don't duplicate with "Mine opgaver". Null = include everything.
+async function fetchOpfoelgninger(excludeMySalesId: number | null): Promise<{
   rows: OpfoelgningRow[];
   totalCount: number;
 }> {
@@ -68,15 +75,19 @@ async function fetchOpfoelgninger(): Promise<{
   }
   const orFilter = orParts.join(",");
 
-  const countRes = await supabase
+  let countQuery = supabase
     .from("tasks")
     .select("id", { head: true, count: "exact" })
     .or(orFilter)
     .is("done_date", null);
+  if (excludeMySalesId != null) {
+    countQuery = countQuery.neq("sales_id", excludeMySalesId);
+  }
+  const countRes = await countQuery;
   if (countRes.error) throw countRes.error;
   const totalCount = countRes.count ?? 0;
 
-  const { data, error } = await supabase
+  let rowQuery = supabase
     .from("tasks")
     .select(
       "id, text, type, due_date, contact_id, sales_id, sales:sales_id(id, first_name, last_name)",
@@ -85,6 +96,10 @@ async function fetchOpfoelgninger(): Promise<{
     .is("done_date", null)
     .order("due_date", { ascending: true })
     .limit(CLIP_TO);
+  if (excludeMySalesId != null) {
+    rowQuery = rowQuery.neq("sales_id", excludeMySalesId);
+  }
+  const { data, error } = await rowQuery;
   if (error) throw error;
   return {
     rows: (data as unknown as OpfoelgningRow[]) ?? [],
@@ -111,7 +126,12 @@ function extractHandoff(text: string | null): {
   const afIdx = tail.indexOf(" af ");
   if (afIdx < 0) return null;
   const when = tail.slice(0, afIdx).trim();
-  const from = tail.slice(afIdx + 4).trim().split("\n")[0]?.trim() ?? "";
+  const from =
+    tail
+      .slice(afIdx + 4)
+      .trim()
+      .split("\n")[0]
+      ?.trim() ?? "";
   if (!from) return null;
   return { from, when };
 }
@@ -120,10 +140,13 @@ export function OpfoelgningerKontorWidget() {
   const qc = useQueryClient();
   const actorSalesId = useActorSalesId();
   const authUserId = useAuthUserId();
+  // §31b: exclude viewer's own tasks to avoid duplication with
+  // "Mine opgaver" widget on the same page.
+  const viewSalesId = useViewSalesId();
 
   const query = useQuery({
-    queryKey: ["lago-opfoelgninger-kontor"],
-    queryFn: fetchOpfoelgninger,
+    queryKey: ["lago-opfoelgninger-kontor", viewSalesId],
+    queryFn: () => fetchOpfoelgninger(viewSalesId),
     staleTime: 60_000,
   });
 
@@ -219,9 +242,7 @@ export function OpfoelgningerKontorWidget() {
         {rows.map((r) => {
           const handoff = extractHandoff(r.text);
           const salesName = r.sales
-            ? [r.sales.first_name, r.sales.last_name]
-                .filter(Boolean)
-                .join(" ")
+            ? [r.sales.first_name, r.sales.last_name].filter(Boolean).join(" ")
             : null;
           const isOwnAssigned =
             actorSalesId != null && r.sales_id === actorSalesId;
@@ -240,9 +261,7 @@ export function OpfoelgningerKontorWidget() {
           const rawText = r.text?.trim() ?? "";
           const markerIndex = rawText.indexOf(HANDOFF_MARKER);
           const bodyText =
-            markerIndex >= 0
-              ? rawText.slice(0, markerIndex).trim()
-              : rawText;
+            markerIndex >= 0 ? rawText.slice(0, markerIndex).trim() : rawText;
           const label = bodyText || r.type || "Opgave uden tekst";
           const clickable = r.contact_id != null;
           const inner = (
@@ -286,9 +305,7 @@ export function OpfoelgningerKontorWidget() {
                     e.stopPropagation();
                     markDone.mutate(r.id);
                   }}
-                  disabled={
-                    markDone.isPending && markDone.variables === r.id
-                  }
+                  disabled={markDone.isPending && markDone.variables === r.id}
                   className="min-h-9 gap-1.5 bg-[var(--ink)] font-medium text-white hover:bg-[var(--ink)]/90"
                 >
                   {markDone.isPending && markDone.variables === r.id

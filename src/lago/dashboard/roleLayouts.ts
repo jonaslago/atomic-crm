@@ -42,10 +42,14 @@ export const ROLE_LAYOUTS: RoleLayout = {
   // Ringelisten (brief 83) er stadig ude. DashboardGrid bruger to-
   // beholder-model også for kontor: 4 widgets i hovedspalten, 1 i
   // skinnen. Det løser brief 82 §1's 600 px ingenting-problem.
+  // §31b (1. okt 2026): kontor gets both "Mine opgaver" and
+  // "Kontorets opgaver". Mine = tildelt mig. Kontorets = tildelt
+  // kontoret, men ikke mig. Two widgets, same component, different query.
   kontor: [
     "taellerraekke",
     "ordrekommentarer",
     "kan_sendes",
+    "mine_opgaver",
     "opfoelgninger_kontor",
     "seneste_registreringer",
     "datahuller",
