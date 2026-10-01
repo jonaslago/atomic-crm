@@ -166,7 +166,10 @@ export async function fetchAktivitetsside(
       .next_visit_planned_by;
     if (by != null) salesIds.add(by);
   }
-  for (const t of [...(openTasksRes.data ?? []), ...(doneTasksRes.data ?? [])]) {
+  for (const t of [
+    ...(openTasksRes.data ?? []),
+    ...(doneTasksRes.data ?? []),
+  ]) {
     if ((t as { sales_id: number | null }).sales_id != null)
       salesIds.add((t as { sales_id: number }).sales_id);
   }
@@ -208,7 +211,8 @@ export async function fetchAktivitetsside(
       a.sales_name ??
       null;
     const typeLabel =
-      (a.activity_type_code != null && ACTIVITY_TYPE_LABEL[a.activity_type_code]) ||
+      (a.activity_type_code != null &&
+        ACTIVITY_TYPE_LABEL[a.activity_type_code]) ||
       a.activity_type ||
       "Aktivitet";
     rows.push({
@@ -295,10 +299,40 @@ export async function fetchAktivitetsside(
     // på dato. Historisk logik "isPast = shortDate < today" flyttede
     // overskredne åbne opgaver til "Bag os"-sektionen; det var tavst
     // forkert.
+    //
+    // §31c (1. okt 2026): åbne opgaver uden due_date vises med "Ingen
+    // frist" — ALDRIG med now(). Forespørgselstidspunktet er ikke en
+    // frist og ændrer sig ved hvert pageload.
+    const hasDueDate = t.due_date != null;
     const dateIso = isDone
       ? (t.done_date ?? t.due_date ?? new Date().toISOString())
-      : (t.due_date ?? new Date().toISOString());
-    const shortDate = dateIso.slice(0, 10);
+      : (t.due_date ?? null);
+    // Open tasks without due_date: always show (no date filtering).
+    // They belong in "Foran os" with outsideWindow=true so they appear
+    // at the top, labeled "Ingen frist".
+    if (!isDone && dateIso == null) {
+      const ownerName =
+        t.sales_id != null ? (salesNames.get(t.sales_id) ?? null) : null;
+      rows.push({
+        key: `task-${t.id}`,
+        kind: "task",
+        dateIso: "",
+        dateLabel: "Ingen frist",
+        timeLabel: null,
+        typeLabel: "Opgave",
+        typeCode: null,
+        companyId: contact.company_id,
+        companyName: co?.name ?? "—",
+        ownerName,
+        ownerSalesId: t.sales_id,
+        text: t.text ?? "",
+        isPast: false,
+        outsideWindow: true,
+      });
+      return;
+    }
+    const effectiveDateIso = dateIso!;
+    const shortDate = effectiveDateIso.slice(0, 10);
     // §10c (29. sep 2026): fremtidige åbne opgaver uden for perioden
     // filtreres bort. Overskredne (før fromIso) inkluderes altid — den
     // sektion (klient-side) mærker dem "uden for vinduet".
@@ -312,9 +346,9 @@ export async function fetchAktivitetsside(
     rows.push({
       key: `task-${t.id}`,
       kind: "task",
-      dateIso,
-      dateLabel: formatDateLabel(dateIso),
-      timeLabel: formatTimeLabel(dateIso),
+      dateIso: effectiveDateIso,
+      dateLabel: hasDueDate ? formatDateLabel(effectiveDateIso) : "Ingen frist",
+      timeLabel: hasDueDate ? formatTimeLabel(effectiveDateIso) : null,
       typeLabel: "Opgave",
       typeCode: null,
       companyId: contact.company_id,

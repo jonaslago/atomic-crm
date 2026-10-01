@@ -51,8 +51,8 @@ export const WIDGETS: Record<string, WidgetDefinition> = {
     seeAllHref: "/companies?filter=%7B%22priority_status%22%3A%22overdue%22%7D",
   },
   mine_opgaver: {
-    title: "Åbne opgaver",
-    subtitle: "Overskredne og opgaver med frist inden for 7 dage",
+    title: "Mine opgaver",
+    subtitle: "Overskredne, uden frist og opgaver inden for 7 dage",
     width: "narrow",
     component: MineOpgaverWidget,
     seeAllHref: "/aktiviteter?period=kommende&types=opgave",

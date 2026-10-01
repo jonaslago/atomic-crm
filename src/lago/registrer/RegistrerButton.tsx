@@ -24,15 +24,6 @@ interface RegistrerButtonProps {
   variant?: "card" | "primary" | "large" | "secondary";
   initialTab?: TabKey;
   className?: string;
-  /**
-   * Brief 85 tillæg §b (28. sep 2026): Planlæg-fanen i modalen.
-   * customerSalesId = kundens ansvarlige sælger; modalen afgør selv
-   * canPlan (isAdmin eller viewSalesId matcher customerSalesId), så
-   * gaten står ét sted. segment/currentPlannedIso/currentNote fylder
-   * auto-forslag + redigér-mode. Defaults skjuler fanen for eksisterende
-   * opkaldere (dashboard-widgets, CustomerPreview).
-   */
-  customerSalesId?: number | null;
   segment?: "A" | "B" | "C" | "X" | "L" | null;
   currentPlannedIso?: string | null;
   currentNote?: string | null;
@@ -59,7 +50,6 @@ export function RegistrerButton({
   variant = "primary",
   initialTab = "besoeg",
   className,
-  customerSalesId = null,
   segment = null,
   currentPlannedIso = null,
   currentNote = null,
@@ -164,7 +154,6 @@ export function RegistrerButton({
         companyName={companyName}
         initialTab={initialTab}
         onRequestPlanNext={handleRequestPlanNext}
-        customerSalesId={customerSalesId}
         segment={segment}
         currentPlannedIso={currentPlannedIso}
         currentNote={currentNote}

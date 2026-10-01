@@ -41,16 +41,21 @@ const dateFmt = new Intl.DateTimeFormat("da-DK", {
 function dueLabel(iso: string | null): {
   text: string;
   isOverdue: boolean;
-} | null {
-  if (!iso) return null;
+  noDueDate: boolean;
+} {
+  // §31c (1. okt 2026): tasks without due_date show "Ingen frist" —
+  // they are more exposed than dated ones because nobody gets reminded.
+  if (!iso) return { text: "Ingen frist", isOverdue: false, noDueDate: true };
   const due = new Date(iso);
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const tomorrow = new Date(today);
   tomorrow.setDate(tomorrow.getDate() + 1);
-  if (due < today) return { text: dateFmt.format(due), isOverdue: true };
-  if (due < tomorrow) return { text: "I dag", isOverdue: false };
-  return { text: dateFmt.format(due), isOverdue: false };
+  if (due < today)
+    return { text: dateFmt.format(due), isOverdue: true, noDueDate: false };
+  if (due < tomorrow)
+    return { text: "I dag", isOverdue: false, noDueDate: false };
+  return { text: dateFmt.format(due), isOverdue: false, noDueDate: false };
 }
 
 export function CompactTaskRow({
@@ -79,16 +84,14 @@ export function CompactTaskRow({
           <span className={displayName ? "" : "font-medium"}>{text}</span>
         </span>
         {origin && <Meta className="hidden md:inline shrink-0">{origin}</Meta>}
-        {due && (
-          <span
-            className={cn(
-              "shrink-0 text-[length:var(--t-meta)] tabular-nums font-medium",
-              due.isOverdue ? "text-[var(--st-red-fg)]" : "text-[var(--fg-3)]",
-            )}
-          >
-            {due.text}
-          </span>
-        )}
+        <span
+          className={cn(
+            "shrink-0 text-[length:var(--t-meta)] tabular-nums font-medium",
+            due.isOverdue ? "text-[var(--st-red-fg)]" : "text-[var(--fg-3)]",
+          )}
+        >
+          {due.text}
+        </span>
       </button>
 
       {/* Expanded: full content + actions */}
@@ -110,18 +113,16 @@ export function CompactTaskRow({
           {/* Origin + due date as Meta */}
           <div className="mt-1 flex items-center gap-2 text-[length:var(--t-meta)] text-[var(--fg-3)]">
             {origin && <span>{origin}</span>}
-            {origin && due && <span>·</span>}
-            {due && (
-              <span
-                className={
-                  due.isOverdue ? "text-[var(--st-red-fg)]" : undefined
-                }
-              >
-                {due.isOverdue
+            {origin && <span>·</span>}
+            <span
+              className={due.isOverdue ? "text-[var(--st-red-fg)]" : undefined}
+            >
+              {due.noDueDate
+                ? "Ingen frist"
+                : due.isOverdue
                   ? `Forfaldt ${due.text}`
                   : `Forfalder ${due.text}`}
-              </span>
-            )}
+            </span>
           </div>
           {/* Actions */}
           {actions && (

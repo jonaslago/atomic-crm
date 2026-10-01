@@ -78,11 +78,15 @@ export function DashboardKundePicker({
   const mySalesId = useViewSalesId();
   const [q, setQ] = useState("");
 
-  // All of the salesperson's customers.
+  // §41a (1. okt 2026): free search covers ALL active customers — not
+  // just the salesperson's own portfolio. Office works across the whole
+  // base, and a salesperson may register on a customer they're covering
+  // for another. The personal shortcuts (today's registrations, planned
+  // visits) remain personal via their own queries filtered by salesId.
   const allQuery = useQuery({
-    queryKey: ["lago-dashboard-action-kunder", mySalesId],
-    queryFn: () => fetchCustomerList({ mySalesId, onlyMine: true }),
-    enabled: open && mySalesId != null,
+    queryKey: ["lago-dashboard-action-kunder-all"],
+    queryFn: () => fetchCustomerList({ onlyMine: false }),
+    enabled: open,
     staleTime: 60_000,
   });
 

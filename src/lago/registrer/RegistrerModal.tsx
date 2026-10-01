@@ -1,13 +1,15 @@
 import { useQuery } from "@tanstack/react-query";
 import {
+  ArrowLeft,
   CalendarCheck2,
   CalendarClock,
   ClipboardList,
   Loader2,
   MessageSquare,
+  Search as SearchIcon,
   Sparkles,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useTranslate } from "ra-core";
 
 import { getSupabaseClient } from "@/components/atomic-crm/providers/supabase/supabase";
@@ -40,8 +42,10 @@ import type { ContactSummary } from "@/lago/customers/types";
 
 import { ForslagListe, type AiRunSummary } from "@/lago/ai/ForslagListe";
 import type { AktivtForslag } from "@/lago/ai/ForslagKort";
-import { useIsLagoAdmin } from "@/lago/auth/useIsLagoAdmin";
 import { useViewSalesId } from "@/lago/portefolje/PortefoljeContext";
+import { useActorSalesId } from "@/lago/portefolje/useActorSalesId";
+import { fetchCustomerList } from "@/lago/customers/dataAccess";
+import type { SelectedCompany } from "@/lago/dashboard/DashboardKundePicker";
 import { useVisitIntervals } from "@/lago/settings/useVisitIntervals";
 import { FollowUpBuilder, type ManualFollowUp } from "./FollowUpBuilder";
 
@@ -56,10 +60,7 @@ import {
   useRegisterOpgave,
 } from "./mutations";
 import { AKTIVITET_TYPES } from "./types";
-import {
-  useAssignableUsers,
-  type AssignableUser,
-} from "./useAssignableUsers";
+import { useAssignableUsers, type AssignableUser } from "./useAssignableUsers";
 
 type TabKey = "besoeg" | "aktivitet" | "opgave" | "note" | "planlaeg";
 
@@ -83,11 +84,15 @@ function tomorrowIso(): string {
   return `${yyyy}-${mm}-${dd}`;
 }
 
-async function fetchCompanyContacts(companyId: number): Promise<ContactSummary[]> {
+async function fetchCompanyContacts(
+  companyId: number,
+): Promise<ContactSummary[]> {
   const supabase = getSupabaseClient();
   const { data, error } = await supabase
     .from("contacts")
-    .select("id, first_name, last_name, title, status, email_jsonb, phone_jsonb")
+    .select(
+      "id, first_name, last_name, title, status, email_jsonb, phone_jsonb",
+    )
     .eq("company_id", companyId)
     .order("last_name", { ascending: true })
     .returns<ContactSummary[]>();
@@ -104,8 +109,12 @@ function contactLabel(c: ContactSummary): string {
 interface RegistrerModalProps {
   open: boolean;
   onOpenChange: (v: boolean) => void;
-  companyId: number;
-  companyName: string;
+  /** Optional — when omitted, the modal shows a customer picker as step 1.
+   *  §41b (1. okt 2026): one modal, not two. The picker is the first step
+   *  inside the modal. The customer selection can't be lost in a state
+   *  transition between two modals. */
+  companyId?: number;
+  companyName?: string;
   /** Initial tab; useful when the trigger has a specific intent. */
   initialTab?: TabKey;
   /**
@@ -114,20 +123,6 @@ interface RegistrerModalProps {
    * som sibling, så den ikke er child af den dialog der lige lukkede.
    */
   onRequestPlanNext?: () => void;
-  /**
-   * Brief 85 tillæg §b (28. sep 2026): Planlæg som femte faneblad.
-   * customerSalesId = kundens ansvarlige sælger. Modalen afgør SELV om
-   * fanen skal vises: isAdmin || viewSalesId === customerSalesId. Samme
-   * regel som CustomerActionBar og kort/CustomerCard bruger — VIEW-
-   * porteføljen, ikke actor. Under dækning kan Camillas dækker planlægge
-   * på Camillas kunder, uden at gaten fjerner Planlæg. Skrivepunkterne
-   * (PlanleagForm, PlanVisitDialog) bruger allerede useViewSalesId, så
-   * det planlagte besøg tilfalder Camilla — ikke coveren.
-   *
-   * segment fylder auto-forslaget; currentPlannedIso/currentNote gør
-   * fanen redigér-i-stedet-for-opret hvis der allerede findes en aftale.
-   */
-  customerSalesId?: number | null;
   segment?: "A" | "B" | "C" | "X" | "L" | null;
   currentPlannedIso?: string | null;
   currentNote?: string | null;
@@ -143,62 +138,81 @@ interface RegistrerModalProps {
 export function RegistrerModal({
   open,
   onOpenChange,
-  companyId,
-  companyName,
+  companyId: propCompanyId,
+  companyName: propCompanyName,
   initialTab = "besoeg",
   onRequestPlanNext,
-  customerSalesId = null,
-  segment = null,
+  segment: propSegment = null,
   currentPlannedIso = null,
   currentNote = null,
 }: RegistrerModalProps) {
   const translate = useTranslate();
   const [tab, setTab] = useState<TabKey>(initialTab);
-  const { isAdmin } = useIsLagoAdmin();
-  const viewSalesId = useViewSalesId();
-  const canPlan =
-    isAdmin ||
-    (viewSalesId != null &&
-      customerSalesId != null &&
-      customerSalesId === viewSalesId);
+
+  // §41b (1. okt 2026): internal selected company state. When
+  // companyId/companyName are passed as props (e.g. from customer card),
+  // we use those. When not (e.g. from dashboard action bar), the modal
+  // shows a customer picker as step 1.
+  const [internalCompany, setInternalCompany] =
+    useState<SelectedCompany | null>(null);
+  const hasPropsCompany = propCompanyId != null && propCompanyName != null;
+  const company = hasPropsCompany
+    ? { id: propCompanyId, name: propCompanyName, segment: propSegment }
+    : internalCompany;
+
+  // Reset internal state when modal closes.
+  useEffect(() => {
+    if (!open) {
+      setInternalCompany(null);
+    }
+  }, [open]);
 
   useEffect(() => {
     if (open) setTab(initialTab);
   }, [open, initialTab]);
 
-  // Brief 40 (16. sep 2026): kontakter hentes så snart dialogen er
-  // åben — uanset fane. Tidligere gate'de `enabled` på Opgave/Note
-  // fordi de var de eneste faner der VISTE kontakterne, men Besøg-
-  // fanens AI-flow BRUGTE dem gennem `primaryContactId`. Følgen var,
-  // at hvert AI-forslag på et besøg havnede uden binding og trigger'de
-  // en falsk "kunden har ingen kontakter"-advarsel — måletpunktet
-  // felttesten skal svare på blev usikret, uden at nogen så det.
-  // Reglen for `enabled` er derfor "når data skal bruges", ikke
-  // "når data vises" — de to sammenfaldt tilfældigt på et tidspunkt,
-  // men gjorde det ikke længere.
+  const companyId = company?.id ?? 0;
+  const companyName = company?.name ?? "";
+  const segment = company?.segment ?? propSegment;
+
   const contactsQuery = useQuery({
     queryKey: ["lago-registrer-contacts", companyId],
     queryFn: () => fetchCompanyContacts(companyId),
-    enabled: open,
+    enabled: open && companyId > 0,
   });
+
+  // §41b: if no company selected yet, show the inline picker.
+  if (!company) {
+    return (
+      <Dialog open={open} onOpenChange={onOpenChange}>
+        <DialogContent className="flex max-h-[calc(100dvh-2rem)] max-w-lg flex-col gap-0 overflow-hidden p-0">
+          <DialogHeader className="flex-shrink-0 px-6 pt-6 pb-2">
+            <DialogTitle>Registrér — vælg kunde</DialogTitle>
+            <DialogDescription className="sr-only">
+              Vælg en kunde at registrere på
+            </DialogDescription>
+          </DialogHeader>
+          <InlineCustomerPicker onSelect={(c) => setInternalCompany(c)} />
+        </DialogContent>
+      </Dialog>
+    );
+  }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      {/* Brief 42 §1+§3 (16. sep 2026): fane-tilstand + scroll ombygget.
-          §1 — TabsContent afmonterede tidligere inaktive faner, hvilket
-          slettede alle useState-værdier (note, dato, opfølgninger,
-          valgt modtager). Fanerne står tæt på hinanden i toppen — et
-          fejltryk på telefon kostede hele registreringen. Nu forceMount
-          på alle fire faner + data-[state=inactive]:hidden så Radix
-          bevarer state og bare skjuler DOM'en.
-          §3 — hele modalen ruller. Ingen fastgjort bundrække (den
-          løste brief 38 §4's Gem-uden-for-skærm-problem, men max-h-dvh
-          alene gør det samme). overflow-y-auto sidder på DialogContent
-          i stedet for TabsContent, så notefeltets rows={5} ikke klippes
-          af intern flex-min-h-0. */}
       <DialogContent className="flex max-h-[calc(100dvh-2rem)] max-w-lg flex-col gap-0 overflow-y-auto p-0">
         <DialogHeader className="flex-shrink-0 px-6 pt-6 pb-2">
-          <DialogTitle>
+          <DialogTitle className="flex items-center gap-2">
+            {!hasPropsCompany && (
+              <button
+                type="button"
+                onClick={() => setInternalCompany(null)}
+                className="rounded p-1 hover:bg-[var(--surface-1)]"
+                title="Skift kunde"
+              >
+                <Icon icon={ArrowLeft} size="sm" />
+              </button>
+            )}
             {translate("lago.registrer.title", { name: companyName })}
           </DialogTitle>
           <DialogDescription className="sr-only">
@@ -211,51 +225,41 @@ export function RegistrerModal({
           onValueChange={(v) => setTab(v as TabKey)}
           className="flex flex-col"
         >
-          {/* Brief 85 tillæg §b (28. sep 2026): 5 kolonner når canPlan
-              (afledt her fra isAdmin || viewSalesId===customerSalesId)
-              er true — Planlæg-fanen med, ellers 4 (uændret). Tab-labels
-              skjules under 420 px så fem ikoner + navne kan passe på
-              smalle skærme uden at blive klippet. */}
-          <TabsList
-            className={cn(
-              "sticky top-0 z-10 mx-6 grid h-11 bg-background",
-              canPlan ? "grid-cols-5" : "grid-cols-4",
-            )}
-          >
+          {/* §41c (1. okt 2026): 5 tabs always — Planlæg is no longer
+              role-gated. Tab labels hidden under 420px to fit all five. */}
+          <TabsList className="sticky top-0 z-10 mx-6 grid h-11 grid-cols-5 bg-background">
             <TabsTrigger value="besoeg" className="gap-1 text-sm">
               <Icon icon={CalendarCheck2} size="sm" />
-              <span className={cn(canPlan && "hidden min-[420px]:inline")}>
+              <span className="hidden min-[420px]:inline">
                 {translate("lago.registrer.tabs.besoeg")}
               </span>
             </TabsTrigger>
             <TabsTrigger value="aktivitet" className="gap-1 text-sm">
               <Icon icon={Sparkles} size="sm" />
-              <span className={cn(canPlan && "hidden min-[420px]:inline")}>
+              <span className="hidden min-[420px]:inline">
                 {translate("lago.registrer.tabs.aktivitet")}
               </span>
             </TabsTrigger>
             <TabsTrigger value="opgave" className="gap-1 text-sm">
               <Icon icon={ClipboardList} size="sm" />
-              <span className={cn(canPlan && "hidden min-[420px]:inline")}>
+              <span className="hidden min-[420px]:inline">
                 {translate("lago.registrer.tabs.opgave")}
               </span>
             </TabsTrigger>
             <TabsTrigger value="note" className="gap-1 text-sm">
               <Icon icon={MessageSquare} size="sm" />
-              <span className={cn(canPlan && "hidden min-[420px]:inline")}>
+              <span className="hidden min-[420px]:inline">
                 {translate("lago.registrer.tabs.note")}
               </span>
             </TabsTrigger>
-            {canPlan && (
-              <TabsTrigger value="planlaeg" className="gap-1 text-sm">
-                <Icon icon={CalendarClock} size="sm" />
-                <span className="hidden min-[420px]:inline">
-                  {translate("lago.registrer.tabs.planlaeg", {
-                    _: "Planlæg",
-                  })}
-                </span>
-              </TabsTrigger>
-            )}
+            <TabsTrigger value="planlaeg" className="gap-1 text-sm">
+              <Icon icon={CalendarClock} size="sm" />
+              <span className="hidden min-[420px]:inline">
+                {translate("lago.registrer.tabs.planlaeg", {
+                  _: "Planlæg",
+                })}
+              </span>
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent
@@ -320,25 +324,227 @@ export function RegistrerModal({
               onDone={() => onOpenChange(false)}
             />
           </TabsContent>
-          {canPlan && (
-            <TabsContent
-              value="planlaeg"
-              forceMount
-              className={cn("mt-0", tab !== "planlaeg" && "hidden")}
-            >
-              <PlanleagForm
-                companyId={companyId}
-                companyName={companyName}
-                segment={segment}
-                currentPlannedIso={currentPlannedIso}
-                currentNote={currentNote}
-                onDone={() => onOpenChange(false)}
-              />
-            </TabsContent>
-          )}
+          <TabsContent
+            value="planlaeg"
+            forceMount
+            className={cn("mt-0", tab !== "planlaeg" && "hidden")}
+          >
+            <PlanleagForm
+              companyId={companyId}
+              companyName={companyName}
+              segment={segment}
+              currentPlannedIso={currentPlannedIso}
+              currentNote={currentNote}
+              onDone={() => onOpenChange(false)}
+            />
+          </TabsContent>
         </Tabs>
       </DialogContent>
     </Dialog>
+  );
+}
+
+// ---------------------------------------------------------------------
+// Inline customer picker (§41b — step 1 inside the modal)
+// ---------------------------------------------------------------------
+
+/** Today's registrations for the current salesperson. */
+async function fetchTodaysRegCompanyIds(salesId: number): Promise<number[]> {
+  const today = new Date().toISOString().slice(0, 10);
+  const { data, error } = await getSupabaseClient()
+    .from("customer_activities_lago")
+    .select("company_id")
+    .eq("sales_id", salesId)
+    .eq("activity_date", today)
+    .is("deleted_at", null)
+    .order("id", { ascending: false });
+  if (error) throw error;
+  return [...new Set((data ?? []).map((r) => r.company_id as number))];
+}
+
+/** Company IDs with a planned visit today or later. */
+async function fetchPlannedCompanyIds(): Promise<number[]> {
+  const today = new Date().toISOString().slice(0, 10);
+  const { data, error } = await getSupabaseClient()
+    .from("companies_lago")
+    .select("company_id")
+    .not("next_visit_planned", "is", null)
+    .gte("next_visit_planned", `${today}T00:00:00`)
+    .order("next_visit_planned", { ascending: true });
+  if (error) throw error;
+  return (data ?? []).map((r) => r.company_id as number);
+}
+
+function InlineCustomerPicker({
+  onSelect,
+}: {
+  onSelect: (c: SelectedCompany) => void;
+}) {
+  const mySalesId = useViewSalesId();
+  const [q, setQ] = useState("");
+
+  const allQuery = useQuery({
+    queryKey: ["lago-registrer-picker-all"],
+    queryFn: () => fetchCustomerList({ onlyMine: false }),
+    staleTime: 60_000,
+  });
+
+  const todayQuery = useQuery({
+    queryKey: ["lago-registrer-picker-today", mySalesId],
+    queryFn: () => fetchTodaysRegCompanyIds(mySalesId!),
+    enabled: mySalesId != null,
+    staleTime: 30_000,
+  });
+
+  const plannedQuery = useQuery({
+    queryKey: ["lago-registrer-picker-planned"],
+    queryFn: () => fetchPlannedCompanyIds(),
+    staleTime: 30_000,
+  });
+
+  const { todayRows, plannedRows, searchRows } = useMemo(() => {
+    const rows = allQuery.data ?? [];
+    const todayIds = new Set(todayQuery.data ?? []);
+    const plannedIds = new Set(plannedQuery.data ?? []);
+    const needle = q.trim().toLowerCase();
+
+    if (needle) {
+      const matched = rows
+        .filter((r) => {
+          const hay = [r.name, r.city ?? ""].join(" ").toLowerCase();
+          return hay.includes(needle);
+        })
+        .slice(0, 20);
+      return { todayRows: [], plannedRows: [], searchRows: matched };
+    }
+
+    const today = rows.filter((r) => todayIds.has(r.id));
+    const planned = rows.filter(
+      (r) => plannedIds.has(r.id) && !todayIds.has(r.id),
+    );
+    return { todayRows: today, plannedRows: planned, searchRows: [] };
+  }, [allQuery.data, todayQuery.data, plannedQuery.data, q]);
+
+  const isPending =
+    allQuery.isPending || todayQuery.isPending || plannedQuery.isPending;
+  const hasAny =
+    todayRows.length > 0 || plannedRows.length > 0 || searchRows.length > 0;
+
+  const select = (row: {
+    id: number;
+    name: string;
+    extension?: { segment?: "A" | "B" | "C" | "X" | "L" | null };
+  }) => {
+    onSelect({
+      id: row.id,
+      name: row.name,
+      segment: row.extension?.segment ?? null,
+    });
+  };
+
+  return (
+    <>
+      <div className="border-b border-[var(--line)] px-6 pt-1 pb-3">
+        <div className="relative">
+          <Icon
+            icon={SearchIcon}
+            size="sm"
+            className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-[var(--fg-3)]"
+          />
+          <Input
+            autoFocus
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="Kundenavn eller by"
+            className="pl-9"
+          />
+        </div>
+      </div>
+      <div className="min-h-0 flex-1 overflow-y-auto px-2 py-2">
+        {isPending ? (
+          <div className="text-muted-foreground flex items-center gap-2 py-6 text-sm">
+            <Icon icon={Loader2} className="animate-spin" />
+            Henter kunder …
+          </div>
+        ) : !hasAny && !q.trim() ? (
+          <p className="text-muted-foreground px-4 py-6 text-sm">
+            Begynd at skrive for at søge.
+          </p>
+        ) : !hasAny && q.trim() ? (
+          <p className="text-muted-foreground px-4 py-6 text-sm">
+            Ingen kunder matcher søgningen.
+          </p>
+        ) : (
+          <div className="flex flex-col">
+            {todayRows.length > 0 && (
+              <PickerSection label="Dagens registreringer">
+                {todayRows.map((row) => (
+                  <PickerItem key={row.id} row={row} onSelect={select} />
+                ))}
+              </PickerSection>
+            )}
+            {plannedRows.length > 0 && (
+              <PickerSection label="Planlagte besøg">
+                {plannedRows.map((row) => (
+                  <PickerItem key={row.id} row={row} onSelect={select} />
+                ))}
+              </PickerSection>
+            )}
+            {searchRows.length > 0 && (
+              <ul className="flex flex-col">
+                {searchRows.map((row) => (
+                  <PickerItem key={row.id} row={row} onSelect={select} />
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
+      </div>
+    </>
+  );
+}
+
+function PickerSection({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="mb-1">
+      <p className="px-4 pt-2 pb-1 text-[length:var(--t-meta)] font-medium uppercase tracking-wider text-[var(--fg-3)]">
+        {label}
+      </p>
+      <ul className="flex flex-col">{children}</ul>
+    </div>
+  );
+}
+
+function PickerItem({
+  row,
+  onSelect,
+}: {
+  row: { id: number; name: string; city?: string | null };
+  onSelect: (row: { id: number; name: string }) => void;
+}) {
+  return (
+    <li>
+      <button
+        type="button"
+        onClick={() => onSelect(row)}
+        className="flex w-full min-h-11 items-baseline gap-3 rounded-md px-4 py-2 text-left hover:bg-[var(--surface-1)]"
+      >
+        <span className="min-w-0 flex-1 truncate text-sm font-medium text-[var(--fg)]">
+          {row.name}
+        </span>
+        {row.city && (
+          <span className="shrink-0 text-[13px] text-[var(--fg-3)]">
+            {row.city}
+          </span>
+        )}
+      </button>
+    </li>
   );
 }
 
@@ -535,7 +741,10 @@ function BesoegForm({
           <Label className="text-sm">
             {translate("lago.registrer.besoeg.performed_by_label")}
           </Label>
-          <PerformerSelect state={performer} className="min-h-11 w-full min-w-0" />
+          <PerformerSelect
+            state={performer}
+            className="min-h-11 w-full min-w-0"
+          />
         </div>
       </div>
       <div className="space-y-1.5">
@@ -575,18 +784,24 @@ function BesoegForm({
       {/* Brief 40: én af tre distinkte tilstande — vises kun når den
           er sand. Kontakter der loader støjer ikke; en fejl har egen
           farve; tom-og-noget-tilføjet tilbyder inline-oprettelse. */}
-      {contactsLoading && (aiForslag.length > 0 || manualFollowUps.length > 0) && (
-        <p className="text-[13px] text-[var(--fg-2)]">
-          <Icon icon={Loader2} size="sm" className="mr-1 inline animate-spin" />
-          Henter kontakter så forslagene kan bindes…
-        </p>
-      )}
-      {contactsError && (aiForslag.length > 0 || manualFollowUps.length > 0) && (
-        <p className="text-destructive text-sm">
-          Kunne ikke hente kontakter — opfølgninger kan ikke bindes lige
-          nu. Prøv at åbne kundens side og opdatere.
-        </p>
-      )}
+      {contactsLoading &&
+        (aiForslag.length > 0 || manualFollowUps.length > 0) && (
+          <p className="text-[13px] text-[var(--fg-2)]">
+            <Icon
+              icon={Loader2}
+              size="sm"
+              className="mr-1 inline animate-spin"
+            />
+            Henter kontakter så forslagene kan bindes…
+          </p>
+        )}
+      {contactsError &&
+        (aiForslag.length > 0 || manualFollowUps.length > 0) && (
+          <p className="text-destructive text-sm">
+            Kunne ikke hente kontakter — opfølgninger kan ikke bindes lige nu.
+            Prøv at åbne kundens side og opdatere.
+          </p>
+        )}
       {showInlineContactCreator && (
         <div className="rounded-md border border-[var(--st-amber-fg)]/40 bg-[var(--st-amber-bg)] p-3">
           <p className="text-sm text-[var(--fg)]">
@@ -611,9 +826,7 @@ function BesoegForm({
               size="sm"
               className="min-h-11 gap-1"
               onClick={handleCreateContactInline}
-              disabled={
-                createContact.isPending || !newContactName.trim()
-              }
+              disabled={createContact.isPending || !newContactName.trim()}
             >
               {createContact.isPending && (
                 <Icon icon={Loader2} size="sm" className="animate-spin" />
@@ -647,7 +860,9 @@ function AktivitetForm({
   const followUpAssignee = useAssigneePicker();
   // Brief 84 §4: standard-modtager på ny opfølgning = viewSalesId.
   const viewSalesId = useViewSalesId();
-  const [typeCode, setTypeCode] = useState<string>(String(AKTIVITET_TYPES[0].code));
+  const [typeCode, setTypeCode] = useState<string>(
+    String(AKTIVITET_TYPES[0].code),
+  );
   const [date, setDate] = useState(todayIso());
   const [text, setText] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -759,7 +974,10 @@ function AktivitetForm({
           <Label className="text-sm">
             {translate("lago.registrer.aktivitet.performed_by_label")}
           </Label>
-          <PerformerSelect state={performer} className="min-h-11 w-full min-w-0" />
+          <PerformerSelect
+            state={performer}
+            className="min-h-11 w-full min-w-0"
+          />
         </div>
       </div>
       {/* Brief 35 §1: bekræftelse uden en ekstra kontrol. Linjen skifter
@@ -805,8 +1023,8 @@ function AktivitetForm({
       )}
       {contactsError && manualFollowUps.length > 0 && (
         <p className="text-destructive text-sm">
-          Kunne ikke hente kontakter — opfølgninger kan ikke bindes lige
-          nu. Prøv at åbne kundens side og opdatere.
+          Kunne ikke hente kontakter — opfølgninger kan ikke bindes lige nu.
+          Prøv at åbne kundens side og opdatere.
         </p>
       )}
       {showInlineContactCreator && (
@@ -859,8 +1077,10 @@ interface WithContactsProps extends FormBaseProps {
 const NEW_CONTACT = "__new__";
 
 function contactFullName(c: ContactSummary): string {
-  return [c.first_name, c.last_name].filter(Boolean).join(" ").trim() ||
-    "(uden navn)";
+  return (
+    [c.first_name, c.last_name].filter(Boolean).join(" ").trim() ||
+    "(uden navn)"
+  );
 }
 
 function OpgaveForm({
@@ -1055,7 +1275,10 @@ function OpgaveForm({
           <Label className="text-sm">
             {translate("lago.registrer.opgave.assignee_label")}
           </Label>
-          <AssigneeSelect state={assignee} className="min-h-11 w-full min-w-0" />
+          <AssigneeSelect
+            state={assignee}
+            className="min-h-11 w-full min-w-0"
+          />
         </div>
       </div>
       {error && <p className="text-destructive text-sm">{error}</p>}
@@ -1120,7 +1343,8 @@ function NoteForm({
       </div>
       {loading ? (
         <p className="text-muted-foreground text-sm">
-          <Icon icon={Loader2} size="sm" className="inline animate-spin" /> Henter kontakter…
+          <Icon icon={Loader2} size="sm" className="inline animate-spin" />{" "}
+          Henter kontakter…
         </p>
       ) : contacts.length > 0 ? (
         <div className="space-y-1.5">
@@ -1191,9 +1415,10 @@ function PlanleagForm({
   const translate = useTranslate();
   const intervals = useVisitIntervals();
   const mutation = usePlanNextVisit();
-  // Brief 84 §4: viewSalesId = kundens ansvarlige sælger (Camilla under
-  // dækning, ellers actor). Planen tildeles hende, ikke coveren.
-  const plannedBySalesId = useViewSalesId();
+  // §41c (1. okt 2026): planned_by = the person creating the plan, not
+  // the customer's owner. If Peter plans a visit to Camilla's customer,
+  // it is Peter's visit — it appears on his dashboard, not hers.
+  const plannedBySalesId = useActorSalesId();
 
   const suggestion = (() => {
     if (segment === "A" || segment === "B" || segment === "C") {
@@ -1519,9 +1744,7 @@ function AssignableSelect({
                   <span className="text-muted-foreground text-sm">(mig)</span>
                 )}
                 {o.kind === "backoffice" && (
-                  <span className="text-muted-foreground text-sm">
-                    (kø)
-                  </span>
+                  <span className="text-muted-foreground text-sm">(kø)</span>
                 )}
                 {isDisabled && (
                   <span className="text-muted-foreground text-sm">

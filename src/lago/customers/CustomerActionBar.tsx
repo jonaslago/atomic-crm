@@ -132,12 +132,7 @@ export function CustomerActionBar({
     ? translate("lago.plan_visit.rail_button_edit")
     : translate("lago.plan_visit.rail_button_new");
   return (
-    <div
-      className={cn(
-        "flex flex-wrap items-center gap-2",
-        className,
-      )}
-    >
+    <div className={cn("flex flex-wrap items-center gap-2", className)}>
       <SecondaryAction
         href={mapsUrl}
         label={translate("lago.felt.card.action_navigate")}
@@ -161,10 +156,7 @@ export function CustomerActionBar({
           portrait — Registrér skal aldrig ud af båndet. Knappen renderer
           kun når brugeren må planlægge (isAdmin eller kundens sælger). */}
       {canPlan && (
-        <PlanAction
-          label={planLabel}
-          onClick={() => setPlanOpen(true)}
-        />
+        <PlanAction label={planLabel} onClick={() => setPlanOpen(true)} />
       )}
       {/* Portrait: Registrér er primær og har sin plads her.
           Landscape: rail'en tager Registrér — baren skal ikke duplikere.
@@ -177,7 +169,6 @@ export function CustomerActionBar({
           companyId={companyId}
           companyName={companyName}
           className="w-auto min-w-[9rem] justify-center"
-          customerSalesId={salesId}
           segment={segment}
           currentPlannedIso={currentPlannedIso}
           currentNote={currentNote}

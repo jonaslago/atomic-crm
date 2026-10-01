@@ -108,6 +108,9 @@ async function fetchMineOpgaver(salesId: number): Promise<TaskRow[]> {
   // Aktivitetssiden beholder ISO-ugen fordi den har en periodevælger.
   // Kravet fra §12 var én implementation af ugen (periodRange.ts), ikke
   // ét vindue til alle skærme. Dette var en misfortolkning af mig.
+  // §31c (1. okt 2026): tasks without due_date must also appear — they
+  // are more exposed than dated ones because nobody gets reminded. We
+  // use .or() to include both "due before cutoff" and "no due date".
   const cutoff = new Date();
   cutoff.setHours(0, 0, 0, 0);
   cutoff.setDate(cutoff.getDate() + 8);
@@ -118,8 +121,8 @@ async function fetchMineOpgaver(salesId: number): Promise<TaskRow[]> {
     )
     .eq("sales_id", salesId)
     .is("done_date", null)
-    .lt("due_date", cutoff.toISOString())
-    .order("due_date", { ascending: true });
+    .or(`due_date.lt.${cutoff.toISOString()},due_date.is.null`)
+    .order("due_date", { ascending: true, nullsFirst: true });
   if (error) throw error;
   return ((data as TaskRowFromApi[]) ?? []).map(mapTaskRow);
 }
@@ -334,8 +337,14 @@ export function MineOpgaverWidget() {
   // §36 (30. sep 2026): both counts visible so the user knows what's
   // outside the window. "4 overskredet · 3 inden for 7 dage" — not
   // just overdue, which hid the upcoming ones.
-  const upcomingCount = totalCount - overdueCount;
+  // §31c (1. okt 2026): tasks without due_date counted separately.
+  const noDueDateCount = useMemo(
+    () => (query.data ?? []).filter((t) => !t.due_date).length,
+    [query.data],
+  );
+  const upcomingCount = totalCount - overdueCount - noDueDateCount;
   const countParts: string[] = [];
+  if (noDueDateCount > 0) countParts.push(`${noDueDateCount} uden frist`);
   if (overdueCount > 0) countParts.push(`${overdueCount} overskredet`);
   if (upcomingCount > 0) countParts.push(`${upcomingCount} inden for 7 dage`);
   const countLabel =

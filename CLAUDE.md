@@ -1,5 +1,41 @@
 @AGENTS.md
 
+# Tool Usage — Mandatory Rules
+
+These rules are absolute. They apply to every session, every agent, every command.
+
+## 1. Never use Bash for file search or reading
+
+- **File search by name:** use `Glob`, never `find` or `ls`
+- **Content search:** use `Grep`, never `grep`, `rg`, or `ag` in Bash
+- **Read files:** use `Read`, never `cat`, `head`, `tail`, or `sed`
+
+Bash is for building, deploying, running migrations, and system commands only.
+
+## 2. Paths in double quotes, never backslash-escaped
+
+- Wrong: `/Users/jonasarild/Documents/Claude/Projects/LAGO\ CRM/atomic-crm/...`
+- Right: `"/Users/jonasarild/Documents/Claude/Projects/LAGO CRM/atomic-crm/..."`
+
+## 3. No shell tricks that break permission matching
+
+- Never use `2>/dev/null` in Bash commands
+- Never combine `cd <path> && <command>` — use tool-specific flags instead:
+  - `git -C "<path>"` instead of `cd "<path>" && git ...`
+  - `npx --prefix "<path>"` or `npx supabase --workdir "<path>"` instead of `cd && npx`
+- Both `cd && ...` and `2>/dev/null` make commands unanalysable for the permission matcher, forcing manual approval on every call
+
+## 4. Never run destructive tests against production
+
+- Success-path tests that delete/replace data: run against a copy (`CREATE TABLE _test_x AS SELECT * FROM x`), never the real table
+- Failure-path tests (that roll back) are safe in production
+- When something is empty or deleted, say it on the first line — not as a footnote
+
+## 5. Missing values are shown as missing
+
+- `null` fields display as "Ingen frist", "—", or blank — never filled with `new Date()`, `0`, or any computed placeholder that looks like a real value
+- A fallback that appears valid is fabricated data on a screen people act on
+
 # Agent Workflow
 
 This project ships CRM changes through a coordinated agent team rather than a single implementer. Once a plan is approved (via `ExitPlanMode`), the main thread / orchestrator does not implement directly — it routes the work to the custom agents defined under `.claude/agents/`. Each agent's full contract lives in its own file; this section is the map of who does what, and in which order.
