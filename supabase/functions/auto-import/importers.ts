@@ -287,7 +287,7 @@ export async function importProdukttransaktioner(
     ok: true,
     rowsInFile: rowsSeen,
     rowsImported: payload.length,
-    detail: `Total beløb: ${totalBelob.toFixed(0)} kr.`,
+    detail: `${rowsSeen} i filen · ${payload.length} skrevet · ${totalBelob.toFixed(0)} kr.`,
   };
 }
 
