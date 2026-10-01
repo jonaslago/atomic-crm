@@ -146,8 +146,11 @@ export function cellNumber(v: unknown): number | null {
 
 export function cellDate(v: unknown): string | null {
   if (v == null) return null;
-  if (typeof v === "number") {
-    const ms = (v - 25569) * 86400 * 1000;
+  // Handle Excel serial numbers (both as number and as string from XML)
+  const asNum = typeof v === "number" ? v : typeof v === "string" && /^\d+$/.test(v.trim()) ? Number(v) : null;
+  if (asNum != null && asNum > 30000 && asNum < 60000) {
+    // Likely an Excel date serial (1900-based). Range 30000-60000 covers 1982-2064.
+    const ms = (asNum - 25569) * 86400 * 1000;
     const d = new Date(ms);
     if (Number.isNaN(d.getTime())) return null;
     return d.toISOString().slice(0, 10);
