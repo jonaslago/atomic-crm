@@ -81,6 +81,7 @@ interface GraphMessage {
   subject: string;
   receivedDateTime: string;
   hasAttachments: boolean;
+  from: { emailAddress: { address: string } } | null;
 }
 
 interface GraphAttachment {
@@ -92,16 +93,14 @@ interface GraphAttachment {
 }
 
 async function fetchUnreadMails(token: string): Promise<GraphMessage[]> {
-  // Filter: unread, from the sender, subject starts with prefix
-  const filter = [
-    "isRead eq false",
-    `from/emailAddress/address eq '${SENDER_FILTER}'`,
-    `startsWith(subject, '${SUBJECT_PREFIX}')`,
-  ].join(" and ");
+  // §95: only unread. Sender + subject checked client-side because
+  // Graph $filter doesn't reliably support from/emailAddress/address
+  // combined with isRead.
+  const filter = "isRead eq false";
   const url =
     `https://graph.microsoft.com/v1.0/users/${MAILBOX}/messages` +
     `?$filter=${encodeURIComponent(filter)}` +
-    `&$select=id,internetMessageId,subject,receivedDateTime,hasAttachments` +
+    `&$select=id,internetMessageId,subject,receivedDateTime,hasAttachments,from` +
     `&$orderby=receivedDateTime asc` +
     `&$top=10`;
   const res = await fetch(url, {
@@ -175,7 +174,14 @@ Deno.serve(async (req) => {
     }
 
     const token = await getGraphToken();
-    const messages = await fetchUnreadMails(token);
+    const allMessages = await fetchUnreadMails(token);
+    // Client-side sender + subject filter. Graph $filter is unreliable
+    // for from/emailAddress/address combined queries.
+    const messages = allMessages.filter(
+      (m) =>
+        m.subject.startsWith(SUBJECT_PREFIX) &&
+        (m.from?.emailAddress?.address ?? "").toLowerCase() === SENDER_FILTER,
+    );
 
     if (messages.length === 0) {
       return new Response(
