@@ -390,55 +390,32 @@ export async function importAabneOrdrer(
 ): Promise<{ rowsWritten: number; notesWritten: number }> {
   const supabase = getSupabaseClient();
 
-  // Åbne ordrer ERSTATTES helt — en ordre der ikke længere er åben skal
-  // forsvinde. Undtagelsen fra "import sletter aldrig". Vi sletter alt
-  // og indsætter det nye i én sekvens (Supabase har ikke transaktioner
-  // via SDK; det er OK fordi RLS forhindrer andre skrivere, og
-  // synk-status-linjen viser når kørslen er færdig).
-  //
-  // NB: hvis vi kører drift-import, sletter vi også eksisterende
-  // testdata (og vice versa). Det er by design — åbne ordrer er ét
-  // snapshot; man har ikke to samtidige gyldige sæt.
-  const { error: delErr } = await supabase
-    .from("open_orders_lago")
-    .delete()
-    .neq("ordre_nr", "__never_matches__");
-  if (delErr) throw delErr;
+  // §95-1 (1. okt 2026): transactional replacement via RPC.
+  // DELETE + INSERT for both orders and notes runs in one SQL
+  // transaction. If the insert fails, the delete is rolled back —
+  // the old data stays. Solves the "empty table on failed insert"
+  // problem that existed with separate DELETE + INSERT calls.
+  const orderRows = payload.map((r) => ({
+    ...r,
+    er_testdata,
+    kilde: "import" as const,
+  }));
+  const noteRows = (notePayload ?? []).map((r) => ({ ...r }));
 
-  // §11b: delete notes in the same sequence — one snapshot, one truth.
-  const { error: delNotesErr } = await supabase
-    .from("open_order_notes_lago")
-    .delete()
-    .neq("ordre_nr", "__never_matches__");
-  if (delNotesErr) throw delNotesErr;
+  const { data: rpcResult, error: rpcErr } = await supabase.rpc(
+    "replace_open_orders",
+    {
+      p_orders: orderRows,
+      p_notes: noteRows,
+    },
+  );
+  if (rpcErr) throw rpcErr;
 
-  await inBatches(payload, async (batch) => {
-    const rows = batch.map((r) => ({
-      ...r,
-      er_testdata,
-      kilde: "import" as const,
-      synced_at: new Date().toISOString(),
-    }));
-    const { error } = await supabase.from("open_orders_lago").insert(rows);
-    if (error) throw error;
-  });
-
-  // §11b: write notes if provided. Missing notes = log, not block.
-  let notesWritten = 0;
-  if (notePayload && notePayload.length > 0) {
-    const now = new Date().toISOString();
-    await inBatches(notePayload, async (batch) => {
-      const rows = batch.map((r) => ({
-        ...r,
-        synced_at: now,
-      }));
-      const { error } = await supabase
-        .from("open_order_notes_lago")
-        .insert(rows);
-      if (error) throw error;
-    });
-    notesWritten = notePayload.length;
-  }
+  const result = rpcResult as {
+    orders_inserted: number;
+    notes_inserted: number;
+  };
+  const notesWritten = result.notes_inserted ?? 0;
 
   const daterne = payload.map((r) => r.ordre_dato).sort();
   const noteLabel = notePayload
