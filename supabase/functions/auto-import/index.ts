@@ -368,18 +368,28 @@ Deno.serve(async (req) => {
         }
 
         if (idByType.has("aabne_ordrer")) {
-          const ordreBytes = await getBytes("aabne_ordrer");
-          const noteBytes = idByType.has("aabne_ordrer_noter")
-            ? await getBytes("aabne_ordrer_noter")
-            : null;
-          const r = await importAabneOrdrer(ordreBytes, noteBytes, supabaseAdmin);
-          if (!r.ok) {
-            throw new Error(`Åbne ordrer port: ${r.gateFailure}`);
+          try {
+            const ordreBytes = await getBytes("aabne_ordrer");
+            const noteBytes = idByType.has("aabne_ordrer_noter")
+              ? await getBytes("aabne_ordrer_noter")
+              : null;
+            const r = await importAabneOrdrer(ordreBytes, noteBytes, supabaseAdmin);
+            if (r.ok) {
+              await logRun("open_orders", r.rowsImported, r.detail ?? "");
+              importResults.push(
+                `Åbne ordrer: ${r.rowsImported} rækker. ${r.detail ?? ""}`,
+              );
+            } else {
+              // Non-fatal for now — ordrer import is being built
+              importResults.push(
+                `Åbne ordrer: ${r.gateFailure ?? "skipped"}`,
+              );
+            }
+          } catch (e) {
+            importResults.push(
+              `Åbne ordrer: ${e instanceof Error ? e.message : String(e)}`,
+            );
           }
-          await logRun("open_orders", r.rowsImported, r.detail ?? "");
-          importResults.push(
-            `Åbne ordrer: ${r.rowsImported} rækker. ${r.detail ?? ""}`,
-          );
         }
 
         if (idByType.has("kunder")) {
