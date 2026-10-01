@@ -87,6 +87,7 @@ interface GraphMessage {
   receivedDateTime: string;
   hasAttachments: boolean;
   from: { emailAddress: { address: string } } | null;
+  isRead?: boolean;
 }
 
 // GraphAttachment removed — we list metadata and download one at a
@@ -217,16 +218,25 @@ Deno.serve(async (req) => {
     let body: Record<string, unknown> = {};
     try { body = await req.json(); } catch { /* no body */ }
     if (body?.debug === true) {
-      const allUnread = await fetchUnreadMails(token);
+      // List ALL recent mails (read + unread) for diagnostics
+      const diagUrl =
+        `https://graph.microsoft.com/v1.0/users/${MAILBOX}/messages` +
+        `?$select=id,internetMessageId,subject,receivedDateTime,hasAttachments,isRead,from` +
+        `&$orderby=receivedDateTime desc` +
+        `&$top=5`;
+      const diagRes = await fetch(diagUrl, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const diagData = diagRes.ok ? await diagRes.json() : { error: await diagRes.text() };
       return new Response(JSON.stringify({
-        unread_count: allUnread.length,
-        mails: allUnread.map((m) => ({
+        all_recent: ((diagData.value ?? []) as GraphMessage[]).map((m) => ({
           id: m.id,
           internetMessageId: m.internetMessageId,
           subject: m.subject,
           from: m.from?.emailAddress?.address ?? null,
           received: m.receivedDateTime,
           hasAttachments: m.hasAttachments,
+          isRead: m.isRead,
         })),
       }), { headers: { "Content-Type": "application/json" } });
     }
