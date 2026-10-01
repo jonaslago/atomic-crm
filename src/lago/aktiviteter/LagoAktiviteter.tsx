@@ -20,7 +20,10 @@ import {
 import { Icon } from "@/lago/ui/Icon";
 import { LagoPullToRefresh } from "@/lago/ui/PullToRefresh";
 import { useCurrentLagoRole } from "@/lago/auth/useCurrentLagoRole";
-import { usePortefolje, useViewSalesId } from "@/lago/portefolje/PortefoljeContext";
+import {
+  usePortefolje,
+  useViewSalesId,
+} from "@/lago/portefolje/PortefoljeContext";
 import { useActorSalesId } from "@/lago/portefolje/useActorSalesId";
 
 import { fetchAktivitetsside, type ActivityRow } from "./dataAccess";
@@ -47,13 +50,19 @@ import { fetchAktivitetsside, type ActivityRow } from "./dataAccess";
 // allerede custom med from/to, så det er en værdi mere, ikke en ny mekanik.
 type PeriodKey = "week" | "month" | "custom" | "kommende";
 
-const TYPE_OPTIONS: Array<{ code: string; label: string; matches: (r: ActivityRow) => boolean }> = [
+// §24f (1. okt 2026): "Aftale" filter removed. Planned visits are now
+// real activities (kind="activity", typeCode=1), not a separate kind.
+// They appear in "Foran os" by date like any other activity.
+const TYPE_OPTIONS: Array<{
+  code: string;
+  label: string;
+  matches: (r: ActivityRow) => boolean;
+}> = [
   { code: "besoeg", label: "Besøg", matches: (r) => r.typeCode === 1 },
   { code: "smagning", label: "Smagning", matches: (r) => r.typeCode === 10 },
   { code: "opkald", label: "Opkald", matches: (r) => r.typeCode === 5 },
   { code: "kampagne", label: "Kampagne", matches: (r) => r.typeCode === 2 },
   { code: "opgave", label: "Opgave", matches: (r) => r.kind === "task" },
-  { code: "aftale", label: "Aftale", matches: (r) => r.kind === "visit" },
 ];
 
 const ALL_PERSONS = "__all__";
@@ -251,179 +260,184 @@ export function LagoAktiviteter() {
 
   return (
     <LagoPullToRefresh>
-    <div className="flex flex-col gap-6">
-      <header>
-        <h1 className="text-[clamp(1.375rem,1.15rem+1.1cqi,1.75rem)] font-bold tracking-tight text-[var(--fg)]">
-          Aktiviteter
-        </h1>
-        <p className="mt-1 text-[13px] text-[var(--fg-2)]">
-          Foran os og bag os — planlagte aftaler, smagninger, opgaver og
-          registreringer.
-        </p>
-      </header>
+      <div className="flex flex-col gap-6">
+        <header>
+          <h1 className="text-[clamp(1.375rem,1.15rem+1.1cqi,1.75rem)] font-bold tracking-tight text-[var(--fg)]">
+            Aktiviteter
+          </h1>
+          <p className="mt-1 text-[13px] text-[var(--fg-2)]">
+            Foran os og bag os — planlagte aftaler, smagninger, opgaver og
+            registreringer.
+          </p>
+        </header>
 
-      {/* Filter-blok. På 375 px stables alle felter; på sm+ ligger de
+        {/* Filter-blok. På 375 px stables alle felter; på sm+ ligger de
           i to rækker. */}
-      <div className="flex flex-col gap-3 rounded-lg bg-[var(--surface-1)] p-4">
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <div className="min-w-0 space-y-1.5">
-            <Label className="text-sm">Person</Label>
-            <Select
-              value={person}
-              onValueChange={(v) => updateParams({ person: v === defaultPerson ? null : v })}
-            >
-              <SelectTrigger className="min-h-11 w-full min-w-0">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={ALL_PERSONS}>Alle</SelectItem>
-                <SelectItem value={NO_OWNER}>Ikke tildelt (Backoffice)</SelectItem>
-                {distinctOwners.map((o) => (
-                  <SelectItem key={o.salesId} value={String(o.salesId)}>
-                    {o.name}
-                    {actorSalesId === o.salesId && (
-                      <span className="text-muted-foreground ml-1 text-sm">
-                        (mig)
-                      </span>
-                    )}
+        <div className="flex flex-col gap-3 rounded-lg bg-[var(--surface-1)] p-4">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="min-w-0 space-y-1.5">
+              <Label className="text-sm">Person</Label>
+              <Select
+                value={person}
+                onValueChange={(v) =>
+                  updateParams({ person: v === defaultPerson ? null : v })
+                }
+              >
+                <SelectTrigger className="min-h-11 w-full min-w-0">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={ALL_PERSONS}>Alle</SelectItem>
+                  <SelectItem value={NO_OWNER}>
+                    Ikke tildelt (Backoffice)
                   </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="min-w-0 space-y-1.5">
-            <Label htmlFor="akt-q" className="text-sm">
-              Kunde
-            </Label>
-            <div className="relative">
-              <Icon
-                icon={Search}
-                className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 -translate-y-1/2"
-              />
-              <Input
-                id="akt-q"
-                type="search"
-                value={customerSearch}
-                onChange={(e) => {
-                  setCustomerSearch(e.target.value);
-                  updateParams({ q: e.target.value || null });
-                }}
-                placeholder="Søg på kundenavn"
-                className="min-h-11 w-full min-w-0 pl-9"
-              />
+                  {distinctOwners.map((o) => (
+                    <SelectItem key={o.salesId} value={String(o.salesId)}>
+                      {o.name}
+                      {actorSalesId === o.salesId && (
+                        <span className="text-muted-foreground ml-1 text-sm">
+                          (mig)
+                        </span>
+                      )}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
-          </div>
-          <div className="min-w-0 space-y-1.5">
-            <Label className="text-sm">Periode</Label>
-            <Select
-              value={period}
-              onValueChange={(v) => updateParams({ period: v === "month" ? null : v })}
-            >
-              <SelectTrigger className="min-h-11 w-full min-w-0">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="week">Denne uge</SelectItem>
-                <SelectItem value="month">Denne måned</SelectItem>
-                {/* Brief 87 tillæg (28. sep 2026): "kommende" er værdien
+            <div className="min-w-0 space-y-1.5">
+              <Label htmlFor="akt-q" className="text-sm">
+                Kunde
+              </Label>
+              <div className="relative">
+                <Icon
+                  icon={Search}
+                  className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 -translate-y-1/2"
+                />
+                <Input
+                  id="akt-q"
+                  type="search"
+                  value={customerSearch}
+                  onChange={(e) => {
+                    setCustomerSearch(e.target.value);
+                    updateParams({ q: e.target.value || null });
+                  }}
+                  placeholder="Søg på kundenavn"
+                  className="min-h-11 w-full min-w-0 pl-9"
+                />
+              </div>
+            </div>
+            <div className="min-w-0 space-y-1.5">
+              <Label className="text-sm">Periode</Label>
+              <Select
+                value={period}
+                onValueChange={(v) =>
+                  updateParams({ period: v === "month" ? null : v })
+                }
+              >
+                <SelectTrigger className="min-h-11 w-full min-w-0">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="week">Denne uge</SelectItem>
+                  <SelectItem value="month">Denne måned</SelectItem>
+                  {/* Brief 87 tillæg (28. sep 2026): "kommende" er værdien
                     forsidens "Se alle kommende besøg" bruger — fra i dag
                     og frem, uden slutdato. */}
-                <SelectItem value="kommende">Kommende (fra i dag)</SelectItem>
-                <SelectItem value="custom">Vælg datoer</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          {period === "custom" && (
-            <div className="grid min-w-0 grid-cols-2 gap-2">
-              <div className="space-y-1.5">
-                <Label htmlFor="akt-from" className="text-sm">
-                  Fra
-                </Label>
-                <Input
-                  id="akt-from"
-                  type="date"
-                  // Guard mod at kommende-sentinel'en 9999-12-31 slipper
-                  // ud i input'et hvis URL'en er manipuleret.
-                  value={
-                    from && from !== FAR_FUTURE_ISO ? from : startOfMonthIso()
-                  }
-                  onChange={(e) => updateParams({ from: e.target.value })}
-                  className="min-h-11 w-full min-w-0"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="akt-to" className="text-sm">
-                  Til
-                </Label>
-                <Input
-                  id="akt-to"
-                  type="date"
-                  value={to && to !== FAR_FUTURE_ISO ? to : endOfMonthIso()}
-                  onChange={(e) => updateParams({ to: e.target.value })}
-                  className="min-h-11 w-full min-w-0"
-                />
-              </div>
+                  <SelectItem value="kommende">Kommende (fra i dag)</SelectItem>
+                  <SelectItem value="custom">Vælg datoer</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
-          )}
-        </div>
-        <div className="flex flex-wrap items-center gap-1.5">
-          <span className="mr-1 text-[13px] font-medium text-[var(--fg-2)]">
-            Type:
-          </span>
-          {/* Brief 49 §2 (17. sep 2026): filterchip = LagoButton, ikke
-              shadcn med rounded-full. Trykmål 44 px, radius 4 px. */}
-          {TYPE_OPTIONS.map((t) => {
-            const active = activeTypes.has(t.code);
-            return (
-              <LagoButton
-                key={t.code}
-                variant={active ? "primary" : "secondary"}
-                onClick={() => toggleType(t.code)}
-              >
-                {t.label}
-                {active && <Icon icon={X} size="sm" />}
-              </LagoButton>
-            );
-          })}
-        </div>
-      </div>
-
-      {query.isPending ? (
-        <div className="text-muted-foreground flex items-center gap-2 py-6 text-sm">
-          <Icon icon={Loader2} className="animate-spin" /> Henter …
-        </div>
-      ) : query.error ? (
-        <p className="text-destructive py-4 text-sm">
-          Kunne ikke hente aktiviteter.{" "}
-          {(query.error as Error).message}
-        </p>
-      ) : (
-        <div className="grid grid-cols-1 gap-8 lg:grid-cols-2">
-          <div className="flex flex-col gap-6">
-            {foranOsOverskredet.length > 0 && (
-              <ActivitySection
-                title={`Overskredet — uden for vinduet (${foranOsOverskredet.length})`}
-                subtitle="Åbne opgaver med forfaldsdato før perioden — vises altid indtil de klares"
-                rows={foranOsOverskredet}
-                emptyText=""
-              />
+            {period === "custom" && (
+              <div className="grid min-w-0 grid-cols-2 gap-2">
+                <div className="space-y-1.5">
+                  <Label htmlFor="akt-from" className="text-sm">
+                    Fra
+                  </Label>
+                  <Input
+                    id="akt-from"
+                    type="date"
+                    // Guard mod at kommende-sentinel'en 9999-12-31 slipper
+                    // ud i input'et hvis URL'en er manipuleret.
+                    value={
+                      from && from !== FAR_FUTURE_ISO ? from : startOfMonthIso()
+                    }
+                    onChange={(e) => updateParams({ from: e.target.value })}
+                    className="min-h-11 w-full min-w-0"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="akt-to" className="text-sm">
+                    Til
+                  </Label>
+                  <Input
+                    id="akt-to"
+                    type="date"
+                    value={to && to !== FAR_FUTURE_ISO ? to : endOfMonthIso()}
+                    onChange={(e) => updateParams({ to: e.target.value })}
+                    className="min-h-11 w-full min-w-0"
+                  />
+                </div>
+              </div>
             )}
+          </div>
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="mr-1 text-[13px] font-medium text-[var(--fg-2)]">
+              Type:
+            </span>
+            {/* Brief 49 §2 (17. sep 2026): filterchip = LagoButton, ikke
+              shadcn med rounded-full. Trykmål 44 px, radius 4 px. */}
+            {TYPE_OPTIONS.map((t) => {
+              const active = activeTypes.has(t.code);
+              return (
+                <LagoButton
+                  key={t.code}
+                  variant={active ? "primary" : "secondary"}
+                  onClick={() => toggleType(t.code)}
+                >
+                  {t.label}
+                  {active && <Icon icon={X} size="sm" />}
+                </LagoButton>
+              );
+            })}
+          </div>
+        </div>
+
+        {query.isPending ? (
+          <div className="text-muted-foreground flex items-center gap-2 py-6 text-sm">
+            <Icon icon={Loader2} className="animate-spin" /> Henter …
+          </div>
+        ) : query.error ? (
+          <p className="text-destructive py-4 text-sm">
+            Kunne ikke hente aktiviteter. {(query.error as Error).message}
+          </p>
+        ) : (
+          <div className="grid grid-cols-1 gap-8 lg:grid-cols-2">
+            <div className="flex flex-col gap-6">
+              {foranOsOverskredet.length > 0 && (
+                <ActivitySection
+                  title={`Overskredet — uden for vinduet (${foranOsOverskredet.length})`}
+                  subtitle="Åbne opgaver med forfaldsdato før perioden — vises altid indtil de klares"
+                  rows={foranOsOverskredet}
+                  emptyText=""
+                />
+              )}
+              <ActivitySection
+                title={`Foran os (${foranOs.length + foranOsOverskredet.length})`}
+                subtitle="Planlagte aftaler, smagninger og opgaver — det nærmeste først"
+                rows={foranOs}
+                emptyText="Ingen planlagte aftaler i perioden."
+              />
+            </div>
             <ActivitySection
-              title={`Foran os (${foranOs.length + foranOsOverskredet.length})`}
-              subtitle="Planlagte aftaler, smagninger og opgaver — det nærmeste først"
-              rows={foranOs}
-              emptyText="Ingen planlagte aftaler i perioden."
+              title={`Bag os (${bagOs.length})`}
+              subtitle="Det, der er registreret — det seneste først"
+              rows={bagOs}
+              emptyText="Intet registreret i perioden. Måske er filteret for stramt."
             />
           </div>
-          <ActivitySection
-            title={`Bag os (${bagOs.length})`}
-            subtitle="Det, der er registreret — det seneste først"
-            rows={bagOs}
-            emptyText="Intet registreret i perioden. Måske er filteret for stramt."
-          />
-        </div>
-      )}
-    </div>
+        )}
+      </div>
     </LagoPullToRefresh>
   );
 }

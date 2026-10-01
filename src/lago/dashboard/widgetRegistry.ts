@@ -1,3 +1,4 @@
+import { BesoegPrPersonWidget } from "./widgets/BesoegPrPersonWidget";
 import { BesoegsdaekningWidget } from "./widgets/BesoegsdaekningWidget";
 import { BevaegelseWidget } from "./widgets/BevaegelseWidget";
 import { DatahullerWidget } from "./widgets/DatahullerWidget";
@@ -10,6 +11,8 @@ import { MinDagWidget } from "./widgets/MinDagWidget";
 import { MineOpgaverWidget } from "./widgets/MineOpgaverWidget";
 import { MinUgeStatusWidget } from "./widgets/MinUgeStatusWidget";
 import { OpfoelgningerKontorWidget } from "./widgets/OpfoelgningerKontorWidget";
+import { OrdreAlderWidget } from "./widgets/OrdreAlderWidget";
+import { OrdreBunkerWidget } from "./widgets/OrdreBunkerWidget";
 import { OrdrekommentarerWidget } from "./widgets/OrdrekommentarerWidget";
 import { RingelistenWidget } from "./widgets/RingelistenWidget";
 import { SalgOgOrdrerWidget } from "./widgets/SalgOgOrdrerWidget";
@@ -197,6 +200,27 @@ export const WIDGETS: Record<string, WidgetDefinition> = {
     subtitle: "Ugens aktivitet pr. sælger",
     width: "full",
     component: LedelsensTalWidget,
+  },
+
+  // §97 (1. okt 2026): three leadership widgets — visits, order buckets,
+  // order age distribution. Replaces "Sælgernes uge" on Ole's dashboard.
+  besoeg_pr_person: {
+    title: "Besøg pr. person",
+    subtitle: "Kun besøg — sorteret efter afholdt denne uge",
+    width: "full",
+    component: BesoegPrPersonWidget,
+  },
+  ordre_bunker: {
+    title: "Åbne ordrer pr. bunke",
+    subtitle: "Hvad venter ordren på — samme bunker som kundekortet",
+    width: "full",
+    component: OrdreBunkerWidget,
+  },
+  ordre_alder: {
+    title: "Aldersfordeling — åbne ordrer",
+    subtitle: "Ekskl. En Primeur · alder fra ordredato",
+    width: "full",
+    component: OrdreAlderWidget,
   },
 };
 

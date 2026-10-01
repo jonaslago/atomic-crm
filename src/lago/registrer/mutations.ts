@@ -4,10 +4,7 @@ import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
 
 import { getSupabaseClient } from "@/components/atomic-crm/providers/supabase/supabase";
-import {
-  createCompanyNote,
-  createTask,
-} from "@/lago/customers/dataAccess";
+import { createCompanyNote, createTask } from "@/lago/customers/dataAccess";
 import { useViewSalesId } from "@/lago/portefolje/PortefoljeContext";
 import { readErrorMessage } from "@/lago/ui/errorMessage";
 import { BESOEG_CODE } from "./types";
@@ -21,7 +18,9 @@ interface Identity {
   fullName?: string;
 }
 
-function readIdentitySalesName(identity: Identity | undefined | null): string | null {
+function readIdentitySalesName(
+  identity: Identity | undefined | null,
+): string | null {
   if (!identity) return null;
   const first = (identity as { firstName?: string }).firstName ?? "";
   const last = (identity as { lastName?: string }).lastName ?? "";
@@ -29,7 +28,9 @@ function readIdentitySalesName(identity: Identity | undefined | null): string | 
   return composed || identity.fullName || null;
 }
 
-function readIdentitySalesId(identity: Identity | undefined | null): number | null {
+function readIdentitySalesId(
+  identity: Identity | undefined | null,
+): number | null {
   if (!identity) return null;
   const raw = identity.id;
   return typeof raw === "number" ? raw : null;
@@ -150,8 +151,7 @@ export function useRegisterBesoeg() {
       // Tidligere satte vi NULL når performedByName var udfyldt — det
       // gjorde "Sælgernes uge"-widget'en blind for alle CRM-native
       // registreringer (widgeten filtrerer på sales_id IN (…)).
-      const salesId =
-        input.performedBySalesId ?? readIdentitySalesId(identity);
+      const salesId = input.performedBySalesId ?? readIdentitySalesId(identity);
       const insertRes = await supabase
         .from("customer_activities_lago")
         .insert({
@@ -170,17 +170,19 @@ export function useRegisterBesoeg() {
       if (insertRes.error) throw insertRes.error;
       const activityId = insertRes.data.id;
 
-      // Brief 15 (FS-20): et registreret besøg opfylder den planlagte
-      // booking — ryd next_visit_planned + note + tildeling så badgen
-      // slukker og planen ikke bliver hængende på Min dag.
-      //
-      // Brief 16. sep 2026: last_visit_at skrives IKKE længere her.
-      // En trigger på customer_activities_lago genberegner feltet fra
-      // MAX(activity_date). Klient og server kan ikke længere komme
-      // ud af trit — og sletning af aktiviteten rykker last_visit_at
-      // tilsvarende tilbage (den fejl vi netop rettede fra den
-      // anden ende).
-      const updateRes = await supabase
+      // §24 (1. okt 2026): a registered visit fulfills the planned one.
+      // Mark any future planned visit activity for this customer as done.
+      await supabase
+        .from("customer_activities_lago")
+        .update({ done: true, updated_at: new Date().toISOString() })
+        .eq("company_id", input.companyId)
+        .eq("activity_type_code", 1)
+        .eq("done", false)
+        .is("deleted_at", null)
+        .gt("activity_date", new Date().toISOString().slice(0, 10));
+
+      // §24 bridge: also clear the column for existing readers
+      await supabase
         .from("companies_lago")
         .update({
           next_visit_planned: null,
@@ -189,7 +191,6 @@ export function useRegisterBesoeg() {
           updated_at: new Date().toISOString(),
         })
         .eq("company_id", input.companyId);
-      if (updateRes.error) throw updateRes.error;
 
       // Brief 21 (AI-3): tilfoejede AI-forslag → tasks. Kraever mindst
       // én kontakt paa kunden (foreign key). Uden én springes forslag
@@ -339,8 +340,7 @@ export function useRegisterBesoeg() {
               },
               (err) => {
                 toast.error("Kunne ikke fortryde besøget", {
-                  description:
-                    readErrorMessage(err),
+                  description: readErrorMessage(err),
                 });
               },
             );
@@ -453,8 +453,7 @@ export function useSoftDeleteActivity() {
               },
               (err) => {
                 toast.error("Kunne ikke fortryde sletning", {
-                  description:
-                    readErrorMessage(err),
+                  description: readErrorMessage(err),
                 });
               },
             );
@@ -528,8 +527,7 @@ export function useRegisterAktivitet() {
         input.performedByName ?? readIdentitySalesName(identity);
       // Brief 61 (17. sep 2026): se useRegisterBesoeg — sales_id sættes
       // altid når vi kender den, ellers falder tilbage til identity.
-      const salesId =
-        input.performedBySalesId ?? readIdentitySalesId(identity);
+      const salesId = input.performedBySalesId ?? readIdentitySalesId(identity);
       const planned = isPlannedDateIso(input.dateIso);
       const res = await supabase.from("customer_activities_lago").insert({
         company_id: input.companyId,
@@ -783,9 +781,7 @@ export function useRegisterOpgave() {
       let createdContactName: string | null = null;
       if (contactId == null) {
         if (!input.newContact || !input.newContact.firstName.trim()) {
-          throw new Error(
-            "Vælg en kontakt eller skriv et navn i Hvem?-feltet",
-          );
+          throw new Error("Vælg en kontakt eller skriv et navn i Hvem?-feltet");
         }
         // Kontakt-ejerskab følger kunden. contacts.sales_id læses som
         // "Fulgt af X" — under dækning peger den på Camilla (kundens
@@ -843,10 +839,11 @@ export interface PlanNextVisitInput extends CommonCtx {
 }
 
 /**
- * Skriver `next_visit_planned` (+ note) på companies_lago. Sætter tid
- * lokalt (browserens tidszone) så en dato uden tid lander som midnat
- * lokal tid — konverteres til UTC via ISO string. Kaldes fra kundekort
- * og som "Planlæg næste"-step efter besøgs-registrering.
+ * §24 (1. okt 2026): a planned visit is a real activity with a future
+ * date and done=false. No more next_visit_planned column writes.
+ *
+ * dateIso = null means "clear the plan" — soft-deletes the existing
+ * future visit activity for this customer (if any).
  */
 export function usePlanNextVisit() {
   const invalidate = useInvalidateAfterWrite();
@@ -854,32 +851,72 @@ export function usePlanNextVisit() {
   return useMutation({
     mutationFn: async (input: PlanNextVisitInput) => {
       const supabase = getSupabaseClient();
-      let plannedIso: string | null = null;
-      if (input.dateIso) {
-        const time = input.timeHm && /^\d{2}:\d{2}$/.test(input.timeHm)
+
+      if (!input.dateIso) {
+        // Clear: soft-delete any future visit activities for this customer
+        const { error } = await supabase
+          .from("customer_activities_lago")
+          .update({ deleted_at: new Date().toISOString() })
+          .eq("company_id", input.companyId)
+          .eq("activity_type_code", 1)
+          .eq("done", false)
+          .is("deleted_at", null)
+          .gt("activity_date", new Date().toISOString().slice(0, 10));
+        if (error) throw error;
+        // §24 bridge: also clear the column
+        await supabase
+          .from("companies_lago")
+          .update({
+            next_visit_planned: null,
+            next_visit_note: null,
+            next_visit_planned_by: null,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("company_id", input.companyId);
+        return;
+      }
+
+      // Soft-delete any existing future visit first (replace, not stack)
+      await supabase
+        .from("customer_activities_lago")
+        .update({ deleted_at: new Date().toISOString() })
+        .eq("company_id", input.companyId)
+        .eq("activity_type_code", 1)
+        .eq("done", false)
+        .is("deleted_at", null)
+        .gt("activity_date", new Date().toISOString().slice(0, 10));
+
+      // Insert the new planned visit as a future activity
+      const { error } = await supabase.from("customer_activities_lago").insert({
+        company_id: input.companyId,
+        activity_date: input.dateIso,
+        activity_type_code: 1,
+        activity_type: "Besøg",
+        description: input.note ?? null,
+        done: false,
+        sales_id: input.plannedBySalesId ?? null,
+        source: "crm_native",
+      });
+      if (error) throw error;
+
+      // §24 bridge: also write the column so existing readers (MinDag,
+      // kundeliste icon, aktivitetssiden) keep working until they are
+      // migrated to v_next_planned_visit_lago. Column is NOT dropped —
+      // this is intentional dual-write during the transition.
+      const time =
+        input.timeHm && /^\d{2}:\d{2}$/.test(input.timeHm)
           ? input.timeHm
           : "00:00";
-        // Byg som lokal tid, konvertér til UTC.
-        const localDate = new Date(`${input.dateIso}T${time}:00`);
-        if (Number.isNaN(localDate.getTime())) {
-          throw new Error("Ugyldig dato/tid");
-        }
-        plannedIso = localDate.toISOString();
-      }
-      const res = await supabase
+      const localDate = new Date(`${input.dateIso}T${time}:00`);
+      await supabase
         .from("companies_lago")
         .update({
-          next_visit_planned: plannedIso,
-          next_visit_note: plannedIso ? (input.note ?? null) : null,
-          // Tildeling følger planen: sat når vi planlægger, nul når vi
-          // rydder. Default = nuværende bruger (input.plannedBySalesId).
-          next_visit_planned_by: plannedIso
-            ? (input.plannedBySalesId ?? null)
-            : null,
+          next_visit_planned: localDate.toISOString(),
+          next_visit_note: input.note ?? null,
+          next_visit_planned_by: input.plannedBySalesId ?? null,
           updated_at: new Date().toISOString(),
         })
         .eq("company_id", input.companyId);
-      if (res.error) throw res.error;
     },
     onSuccess: (_, input) => {
       invalidate(input.companyId);

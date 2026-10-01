@@ -69,12 +69,18 @@ export const ROLE_LAYOUTS: RoleLayout = {
   // ledelses-tallene; Ole opretter typisk ingen opgaver, så widget'en
   // står tom mest af tiden. Princippet: enhver, der kan modtage noget,
   // skal kunne lukke det.
+  // §97 (1. okt 2026): Ole's three questions — are the salespeople out,
+  // and what's in the order book? Besøg pr. person replaces Sælgernes
+  // uge. Ordre-bunker + aldersfordeling are new. Tasks, follow-ups and
+  // order comments are NOT statistics — they don't belong in an overview.
   ledelse: [
+    "besoeg_pr_person",
+    "ordre_bunker",
+    "ordre_alder",
     "besoegsdaekning",
     "salgsudvikling",
     "bevaegelse",
     "kapacitets_tjek",
-    "seneste_registreringer",
     "datakvalitet",
     "mine_opgaver",
   ],
