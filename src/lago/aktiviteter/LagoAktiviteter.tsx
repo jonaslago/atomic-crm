@@ -48,7 +48,7 @@ import { fetchAktivitetsside, type ActivityRow } from "./dataAccess";
 // slutdato. Var manglende værdi — link'et "Se alle kommende besøg" fra
 // forsiden pegede tidligere på kundelisten pga. den. Filteret understøtter
 // allerede custom med from/to, så det er en værdi mere, ikke en ny mekanik.
-type PeriodKey = "week" | "month" | "custom" | "kommende";
+type PeriodKey = "all" | "week" | "month" | "custom" | "kommende";
 
 // §24f (1. okt 2026): "Aftale" filter removed. Planned visits are now
 // real activities (kind="activity", typeCode=1), not a separate kind.
@@ -109,11 +109,14 @@ function todayIsoDate(): string {
 // ind i from/to-state.
 const FAR_FUTURE_ISO = "9999-12-31";
 
+const FAR_PAST_ISO = "2020-01-01";
+
 function periodRange(
   period: PeriodKey,
   from: string | null,
   to: string | null,
 ): { fromIso: string; toIso: string } {
+  if (period === "all") return { fromIso: FAR_PAST_ISO, toIso: FAR_FUTURE_ISO };
   if (period === "week")
     return { fromIso: startOfWeekIso(), toIso: endOfWeekIso() };
   if (period === "custom") {
@@ -154,7 +157,8 @@ export function LagoAktiviteter() {
   }, [role, roleLoading, viewSalesId]);
 
   const person = searchParams.get("person") ?? defaultPerson;
-  const period = (searchParams.get("period") as PeriodKey) ?? "month";
+  // §98-4a (1. okt 2026): "Alt" is the default period.
+  const period = (searchParams.get("period") as PeriodKey) ?? "all";
   const from = searchParams.get("from");
   const to = searchParams.get("to");
   const q = searchParams.get("q") ?? "";
@@ -331,18 +335,16 @@ export function LagoAktiviteter() {
               <Select
                 value={period}
                 onValueChange={(v) =>
-                  updateParams({ period: v === "month" ? null : v })
+                  updateParams({ period: v === "all" ? null : v })
                 }
               >
                 <SelectTrigger className="min-h-11 w-full min-w-0">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
+                  <SelectItem value="all">Alt</SelectItem>
                   <SelectItem value="week">Denne uge</SelectItem>
                   <SelectItem value="month">Denne måned</SelectItem>
-                  {/* Brief 87 tillæg (28. sep 2026): "kommende" er værdien
-                    forsidens "Se alle kommende besøg" bruger — fra i dag
-                    og frem, uden slutdato. */}
                   <SelectItem value="kommende">Kommende (fra i dag)</SelectItem>
                   <SelectItem value="custom">Vælg datoer</SelectItem>
                 </SelectContent>

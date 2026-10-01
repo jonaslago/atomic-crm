@@ -63,17 +63,18 @@ async function fetchAktivitet(input: {
   //    Tekstmatch på sales_name er droppet: gav stille undertælling
   //    ved navneændringer, og det var netop det tal, felt-testen måler.
   const weekStart = startOfWeek();
-  const besoegQuery = input.salesId != null
-    ? supabase
-        .from("customer_activities_lago")
-        .select("id", { head: true, count: "exact" })
-        .eq("activity_type", "Besøg")
-        .eq("sales_id", input.salesId)
-        // Slettede besøg må ikke tælles i status-ugetallet
-        // (brief 16. sep 2026).
-        .is("deleted_at", null)
-        .gte("activity_date", weekStart.toISOString().slice(0, 10))
-    : Promise.resolve({ count: 0, error: null });
+  const besoegQuery =
+    input.salesId != null
+      ? supabase
+          .from("customer_activities_lago")
+          .select("id", { head: true, count: "exact" })
+          .eq("activity_type", "Besøg")
+          .eq("sales_id", input.salesId)
+          // §24: only completed visits (done=true). A plan is not a visit.
+          .eq("done", true)
+          .is("deleted_at", null)
+          .gte("activity_date", weekStart.toISOString().slice(0, 10))
+      : Promise.resolve({ count: 0, error: null });
 
   // 2+3) Overskredne + planlagte — genbrug fetchCustomerList (onlyMine)
   const mine =
@@ -92,7 +93,9 @@ async function fetchAktivitet(input: {
     besoegDenneUge: besoegRes.count ?? 0,
     overskredneCount: 0, // fyldes med priority-beregning nedenfor
     planlagteFrem: mine.filter(
-      (c) => c.extension?.next_visit_planned && new Date(c.extension.next_visit_planned) >= now,
+      (c) =>
+        c.extension?.next_visit_planned &&
+        new Date(c.extension.next_visit_planned) >= now,
     ).length,
   };
 }
@@ -109,7 +112,9 @@ interface DistrictSalesRow {
   seneste_3m_forrige: number;
 }
 
-async function fetchMitDistrikt(sellerCode: string | null): Promise<string | null> {
+async function fetchMitDistrikt(
+  sellerCode: string | null,
+): Promise<string | null> {
   if (!sellerCode) return null;
   const supabase = getSupabaseClient();
   const { data, error } = await supabase
@@ -138,12 +143,16 @@ async function fetchMitDistrikt(sellerCode: string | null): Promise<string | nul
   return bestDistrikt;
 }
 
-async function fetchDistrictSales(distrikt: string): Promise<DistrictSalesRow | null> {
+async function fetchDistrictSales(
+  distrikt: string,
+): Promise<DistrictSalesRow | null> {
   const supabase = getSupabaseClient();
   // Distrikt-subtotal = grouping_id 1 (distrikt sat, kundetype null)
   const { data, error } = await supabase
     .from("v_sales_district_periods")
-    .select("distrikt, kundetype, grouping_id, t12m, t12m_forrige, seneste_3m, seneste_3m_forrige")
+    .select(
+      "distrikt, kundetype, grouping_id, t12m, t12m_forrige, seneste_3m, seneste_3m_forrige",
+    )
     .eq("distrikt", distrikt)
     .eq("grouping_id", 1)
     .maybeSingle<DistrictSalesRow>();
@@ -183,8 +192,10 @@ export function MinStatusWidget() {
     queryKey: ["lago-min-status-overskredne", salesId],
     queryFn: async () => {
       if (salesId == null) return 0;
-      const list = await fetchCustomerList({ mySalesId: salesId, onlyMine: true });
-      const now = new Date();
+      const list = await fetchCustomerList({
+        mySalesId: salesId,
+        onlyMine: true,
+      });
       return list.filter((c) => {
         const p = resolveVisitPriority(c.visit_priority);
         return p.status === "overdue" || p.status === "never_visited";

@@ -65,7 +65,8 @@ import { useAssignableUsers, type AssignableUser } from "./useAssignableUsers";
 type TabKey = "besoeg" | "aktivitet" | "opgave" | "note" | "planlaeg";
 
 const NO_CONTACT = "__none__";
-const DEFAULT_TASK_TYPE = "call";
+// §98-5b: "Ingen" as default — not a pre-selected type the user hasn't chosen.
+const DEFAULT_TASK_TYPE = "none";
 
 function todayIso(): string {
   const d = new Date();

@@ -17,8 +17,8 @@ import { WidgetShell } from "../WidgetShell";
  *
  * Vi filtrerer på source = 'crm_native' så VISMA-importerede
  * historiske aktiviteter ikke drukner listen. Sorteret på
- * created_at (indtastningstidspunkt), ikke activity_date, fordi
- * kontoret spørger "hvad har sælgerne lige indtastet".
+ * §24 follow-up: shows only done=true activities (plans excluded).
+ * Date = activity_date (the day the user chose), not created_at.
  */
 
 interface RegistreringRow {
@@ -42,19 +42,22 @@ async function fetchSenesteRegistreringer(): Promise<RegistreringRow[]> {
       "id, company_id, activity_date, activity_type, description, sales_name, created_at, companies:company_id(id, name, city)",
     )
     .eq("source", "crm_native")
-    // Skjul blødt slettede (brief 16. sep 2026).
+    // §24 follow-up: only completed activities. A plan is not a registration.
+    .eq("done", true)
     .is("deleted_at", null)
-    .order("created_at", { ascending: false })
+    // Sort by activity_date, not created_at — the date the user chose,
+    // not the timestamp of the database INSERT.
+    .order("activity_date", { ascending: false })
     .limit(CLIP_TO);
   if (error) throw error;
   return (data as unknown as RegistreringRow[]) ?? [];
 }
 
-const dateTimeFmt = new Intl.DateTimeFormat("da-DK", {
+// §98-4b / §24: activity_date is a date, not a timestamp. No clock time.
+const dateFmt = new Intl.DateTimeFormat("da-DK", {
   day: "numeric",
   month: "short",
-  hour: "2-digit",
-  minute: "2-digit",
+  year: "numeric",
 });
 
 export function SenesteRegistreringerWidget() {
@@ -95,12 +98,14 @@ export function SenesteRegistreringerWidget() {
                   )}
                 </div>
                 <div className="tabular-nums text-[13px] font-medium text-[var(--fg-3)]">
-                  {dateTimeFmt.format(new Date(r.created_at))}
+                  {dateFmt.format(new Date(r.activity_date + "T12:00:00"))}
                 </div>
               </div>
               <div className="mt-1 flex flex-wrap items-center gap-x-2 text-[13px] text-[var(--fg-2)]">
                 {r.sales_name && (
-                  <span title={r.sales_name}>{shortenSalesName(r.sales_name)}</span>
+                  <span title={r.sales_name}>
+                    {shortenSalesName(r.sales_name)}
+                  </span>
                 )}
                 {c?.city && <span>· {c.city}</span>}
               </div>

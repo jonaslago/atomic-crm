@@ -45,9 +45,11 @@ export const ROLE_LAYOUTS: RoleLayout = {
   // §31b (1. okt 2026): kontor gets both "Mine opgaver" and
   // "Kontorets opgaver". Mine = tildelt mig. Kontorets = tildelt
   // kontoret, men ikke mig. Two widgets, same component, different query.
+  // §98-1 (1. okt 2026): ordrekommentarer øverst, fremhævet.
+  // Ringeliste-widget udgår (Simon: "den kan man selv finde under kunder").
   kontor: [
-    "taellerraekke",
     "ordrekommentarer",
+    "taellerraekke",
     "kan_sendes",
     "mine_opgaver",
     "opfoelgninger_kontor",
@@ -104,8 +106,8 @@ export const ROLE_LAYOUTS: RoleLayout = {
   // egne administrative widgets nederst (ledelsens_tal + mine_opgaver).
   // Forslag_rettelser er ude fra forsiden — hører på indstillinger.
   admin: [
-    "taellerraekke",
     "ordrekommentarer",
+    "taellerraekke",
     "kan_sendes",
     "opfoelgninger_kontor",
     "seneste_registreringer",

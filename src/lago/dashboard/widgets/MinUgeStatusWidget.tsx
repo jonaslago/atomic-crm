@@ -47,6 +47,8 @@ async function fetchStatus(salesId: number | null): Promise<StatusData> {
           .select("id", { head: true, count: "exact" })
           .eq("activity_type", "Besøg")
           .eq("sales_id", salesId)
+          // §24: only completed visits
+          .eq("done", true)
           .is("deleted_at", null)
           .gte("activity_date", weekStartIso)
       : Promise.resolve({ count: 0, error: null }),
@@ -55,6 +57,8 @@ async function fetchStatus(salesId: number | null): Promise<StatusData> {
           .from("customer_activities_lago")
           .select("id", { head: true, count: "exact" })
           .eq("sales_id", salesId)
+          // §24: only completed activities
+          .eq("done", true)
           .is("deleted_at", null)
           .gte("activity_date", weekStartIso)
       : Promise.resolve({ count: 0, error: null }),
@@ -63,6 +67,8 @@ async function fetchStatus(salesId: number | null): Promise<StatusData> {
           .from("customer_activities_lago")
           .select("company_id")
           .eq("sales_id", salesId)
+          // §24: only completed activities
+          .eq("done", true)
           .is("deleted_at", null)
           .gte("activity_date", weekStartIso)
       : Promise.resolve({ data: [], error: null }),

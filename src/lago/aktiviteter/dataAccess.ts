@@ -432,7 +432,8 @@ export async function fetchAktivitetsside(
       kind: "task",
       dateIso: effectiveDateIso,
       dateLabel: hasDueDate ? formatDateLabel(effectiveDateIso) : "Ingen frist",
-      timeLabel: hasDueDate ? formatTimeLabel(effectiveDateIso) : null,
+      // §98-4b: tasks have a deadline, not a time. Only appointments show time.
+      timeLabel: null,
       typeLabel: "Opgave",
       typeCode: null,
       companyId: contact.company_id,

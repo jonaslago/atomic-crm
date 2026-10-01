@@ -102,6 +102,7 @@ async function fetchDatahuller(): Promise<{
 
 export function DatahullerWidget() {
   const [filter, setFilter] = useState<HullType>("uden_ejer");
+  const [showAll, setShowAll] = useState(false);
 
   const query = useQuery({
     queryKey: ["lago-datahuller"],
@@ -143,7 +144,10 @@ export function DatahullerWidget() {
             <LagoButton
               key={t}
               variant={active ? "primary" : "secondary"}
-              onClick={() => setFilter(t)}
+              onClick={() => {
+                setFilter(t);
+                setShowAll(false);
+              }}
               disabled={count === 0}
             >
               {FILTER_LABEL[t]}
@@ -167,8 +171,35 @@ export function DatahullerWidget() {
           </li>
         ))}
       </ul>
-      {/* Brief 43-gæld: "Se alle N (vises snart)" fjernet. Enten
-          virker linket, eller også står det der ikke. */}
+      {activeRows.length > 5 && (
+        <LagoButton
+          variant="secondary"
+          className="mt-2 w-full justify-center"
+          onClick={() => setShowAll((v) => !v)}
+        >
+          {showAll ? "Vis færre" : `Se alle ${activeRows.length}`}
+        </LagoButton>
+      )}
+      {showAll && activeRows.length > 5 && (
+        <ul className="mt-2 flex flex-col gap-2">
+          {activeRows.slice(5).map((r) => (
+            <li
+              key={r.id}
+              className="rounded-lg bg-[var(--surface-1)] px-3 py-2"
+            >
+              <Link
+                to={`/companies/${r.id}/show`}
+                className="block text-base font-medium text-[var(--fg)] no-underline hover:underline"
+              >
+                {r.name}
+              </Link>
+              {r.city && (
+                <span className="text-[13px] text-[var(--fg-2)]">{r.city}</span>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
     </WidgetShell>
   );
 }

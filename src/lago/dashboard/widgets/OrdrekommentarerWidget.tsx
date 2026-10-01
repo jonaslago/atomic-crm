@@ -69,9 +69,7 @@ function formatAftaltDato(iso: string): string {
 export function OrdrekommentarerWidget() {
   const actorSalesId = useActorSalesId();
   const qc = useQueryClient();
-  const [lukketDialog, setLukketDialog] = useState<OrdreKommentar | null>(
-    null,
-  );
+  const [lukketDialog, setLukketDialog] = useState<OrdreKommentar | null>(null);
   const [lukketGrund, setLukketGrund] = useState("");
   const [lukketError, setLukketError] = useState<string | null>(null);
 
@@ -98,7 +96,9 @@ export function OrdrekommentarerWidget() {
       qc.invalidateQueries({
         queryKey: ["lago-ordre-kommentarer", k.companyId],
       });
-      toast.success(`Markeret udført · ${k.companyName ?? "Kunde"} #${k.ordreNr}`);
+      toast.success(
+        `Markeret udført · ${k.companyName ?? "Kunde"} #${k.ordreNr}`,
+      );
     },
     onError: (err) =>
       toast.error("Kunne ikke markere udført", {
@@ -150,13 +150,16 @@ export function OrdrekommentarerWidget() {
         antal > 0
           ? {
               label: `${antal} afventer`,
-              tone: rows.some((r) => r.hensigt === "send_nu") ? "red" : "neutral",
+              tone: rows.some((r) => r.hensigt === "send_nu")
+                ? "red"
+                : "neutral",
             }
           : undefined
       }
       noPanel
     >
-      <Panel>
+      {/* §98-1: fremhævet panel — border + kraftigere baggrund */}
+      <Panel className="border-2 border-[var(--fg-3)]/20">
         <RowGroup>
           {rows.map((k) => {
             const isPending =
@@ -200,7 +203,8 @@ export function OrdrekommentarerWidget() {
                       </p>
                     )}
                     <p className="mt-1 text-[12px] text-[var(--fg-3)]">
-                      {k.oprettetAfNavn ?? "(ukendt)"} · {formatOprettet(k.oprettet)}
+                      {k.oprettetAfNavn ?? "(ukendt)"} ·{" "}
+                      {formatOprettet(k.oprettet)}
                     </p>
                   </div>
                   <div className="flex shrink-0 items-center gap-2">
@@ -243,7 +247,8 @@ export function OrdrekommentarerWidget() {
             <DialogTitle>Luk kommentar med begrundelse</DialogTitle>
             <DialogDescription>
               {lukketDialog?.companyName ?? "Kunde"} · Ordre #
-              {lukketDialog?.ordreNr} — {lukketDialog && HENSIGT_LABEL[lukketDialog.hensigt]}
+              {lukketDialog?.ordreNr} —{" "}
+              {lukketDialog && HENSIGT_LABEL[lukketDialog.hensigt]}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-2 py-2">
