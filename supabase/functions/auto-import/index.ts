@@ -47,7 +47,8 @@ const FILE_MAP: Record<string, string> = {
  *  matches "Produkttransaktioner". Longest prefix wins to avoid
  *  "Produkter" matching before "Produkter - udgået". */
 function identifyFile(filename: string): string | null {
-  const base = filename.replace(/\.xlsx$/i, "").trim();
+  // Strip .xlsx and any trailing dots/spaces (OSR sometimes adds extra dots)
+  const base = filename.replace(/\.xlsx$/i, "").replace(/[.\s]+$/, "").trim();
   // Sort patterns by length descending so longer matches win
   const sorted = Object.entries(FILE_MAP).sort(
     (a, b) => b[0].length - a[0].length,

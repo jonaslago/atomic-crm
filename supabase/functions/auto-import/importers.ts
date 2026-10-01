@@ -52,11 +52,14 @@ async function checkGates(
   if (input.rowsInFile === 0) return "Nul rækker i filen";
   if (input.rowsAfterFilter === 0) return "Nul rækker efter filtrering";
 
-  // Gate: row count deviation ±30% from last successful import
+  // Gate: row count deviation ±30% from last successful AUTO-import.
+  // Compares only against kilde='auto-import' — a manual full-file
+  // import (42k rows) must not gate a 7-day file (500 rows).
   const { data: lastRun } = await supabase
     .from("sync_runs_lago")
     .select("raekker")
     .eq("datasaet", input.datasaet)
+    .eq("kilde", "auto-import")
     .not("note", "ilike", "%fejlet%")
     .order("koert_at", { ascending: false })
     .limit(1)
