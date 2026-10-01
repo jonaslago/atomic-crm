@@ -217,6 +217,20 @@ Deno.serve(async (req) => {
     // Debug mode: list all unread mails without subject filter
     let body: Record<string, unknown> = {};
     try { body = await req.json(); } catch { /* no body */ }
+    // Mark a specific mail as unread (for retry/testing)
+    if (typeof body?.mark_unread === "string") {
+      const url = `https://graph.microsoft.com/v1.0/users/${MAILBOX}/messages/${body.mark_unread}`;
+      const res = await fetch(url, {
+        method: "PATCH",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ isRead: false }),
+      });
+      return new Response(JSON.stringify({
+        ok: res.ok,
+        status: res.status,
+      }), { headers: { "Content-Type": "application/json" } });
+    }
+
     if (body?.debug === true) {
       // List ALL recent mails (read + unread) for diagnostics
       const diagUrl =
