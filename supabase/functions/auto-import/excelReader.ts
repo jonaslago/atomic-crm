@@ -1,34 +1,82 @@
 /**
  * §95-2: Server-side Excel reader for Deno Edge Functions.
  *
- * Wraps SheetJS (xlsx) for Deno. The browser-side readExcelGrid()
- * in src/lago/settings/salesImport/excelUtils.ts takes a File object;
- * this version takes a Uint8Array (from Graph attachment contentBytes).
- *
- * The parsing helpers (findHeaderRow, buildHeaderMap, cellString, etc.)
- * are pure functions with no browser dependency — we inline the ones
- * we need here to avoid importing from src/ (different module system).
+ * SheetJS (~4MB) exceeds Supabase Edge Function memory limits.
+ * This reader uses fflate (~8KB) to unzip the XLSX and parses the
+ * XML directly. Only reads the first sheet. No write support needed.
  */
 
-/** Read an Excel file from bytes into a 2D array of raw cell values. */
-export async function readExcelGridFromBytes(bytes: Uint8Array): Promise<unknown[][]> {
-  // Use xlsx-lite (community edition, much smaller than full SheetJS)
-  // npm:xlsx caused WORKER_RESOURCE_LIMIT. Use xlsx-lite via esm.sh
-  // which tree-shakes to only the read path (~1MB vs ~4MB).
-  const XLSX = await import("https://esm.sh/xlsx@0.18.5?bundle");
-  const workbook = XLSX.read(bytes, { type: "array" });
-  const sheetName = workbook.SheetNames[0];
-  if (!sheetName) return [];
-  const sheet = workbook.Sheets[sheetName];
-  if (!sheet) return [];
-  return XLSX.utils.sheet_to_json(sheet, {
-    header: 1,
-    defval: null,
-    raw: false, // format dates/numbers as strings — we normalise ourselves
-  }) as unknown[][];
+/** Convert Excel column letters to 0-based index. A=0, B=1, Z=25, AA=26 */
+function colToIndex(letters: string): number {
+  let index = 0;
+  for (let i = 0; i < letters.length; i++) {
+    index = index * 26 + (letters.charCodeAt(i) - 64);
+  }
+  return index - 1;
 }
 
-// ---------- Copied from excelUtils.ts (pure functions) ----------
+/** Read an Excel file from bytes into a 2D array of raw cell values. */
+export async function readExcelGridFromBytes(
+  bytes: Uint8Array,
+): Promise<unknown[][]> {
+  const { unzipSync } = await import("npm:fflate@0.8.2");
+  const files = unzipSync(bytes);
+
+  // Find the first worksheet
+  const sheetKey = Object.keys(files).find((k) =>
+    /xl\/worksheets\/sheet\d+\.xml$/.test(k),
+  );
+  if (!sheetKey) return [];
+  const sheetXml = new TextDecoder().decode(files[sheetKey]);
+
+  // Parse shared strings
+  const ssKey = Object.keys(files).find((k) => k === "xl/sharedStrings.xml");
+  const sharedStrings: string[] = [];
+  if (ssKey) {
+    const ssXml = new TextDecoder().decode(files[ssKey]);
+    const siBlocks = ssXml.match(/<si[\s>][\s\S]*?<\/si>/g) ?? [];
+    for (const block of siBlocks) {
+      const parts = block.match(/<t[^>]*>([^<]*)<\/t>/g) ?? [];
+      sharedStrings.push(
+        parts.map((p) => p.replace(/<\/?t[^>]*>/g, "")).join(""),
+      );
+    }
+  }
+
+  // Parse rows
+  const rows: unknown[][] = [];
+  const rowRegex = /<row[^>]*>([\s\S]*?)<\/row>/g;
+  const cellRegex =
+    /<c\s[^>]*r="([A-Z]+)\d+"[^>]*(?:\st="([^"]*)")?[^>]*>(?:[\s\S]*?<v>([^<]*)<\/v>)?[\s\S]*?<\/c>/g;
+
+  let rowMatch;
+  while ((rowMatch = rowRegex.exec(sheetXml)) !== null) {
+    const cellsXml = rowMatch[1];
+    const row: unknown[] = [];
+    let cellMatch;
+    cellRegex.lastIndex = 0;
+    while ((cellMatch = cellRegex.exec(cellsXml)) !== null) {
+      const col = colToIndex(cellMatch[1]);
+      const type = cellMatch[2]; // s=shared string
+      const rawVal = cellMatch[3];
+
+      while (row.length <= col) row.push(null);
+
+      if (rawVal == null || rawVal === "") {
+        row[col] = null;
+      } else if (type === "s") {
+        row[col] = sharedStrings[parseInt(rawVal, 10)] ?? rawVal;
+      } else {
+        row[col] = rawVal;
+      }
+    }
+    if (row.length > 0) rows.push(row);
+  }
+
+  return rows;
+}
+
+// ---------- Pure parsing helpers (copied from excelUtils.ts) ----------
 
 export function findHeaderRow(
   grid: unknown[][],
@@ -91,13 +139,10 @@ export function cellDate(v: unknown): string | null {
   }
   const s = String(v).trim();
   if (!s) return null;
-  // ISO yyyy-mm-dd
   const iso = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
   if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`;
-  // Danish dd-mm-yyyy or dd/mm/yyyy
   const dk = s.match(/^(\d{2})[-/](\d{2})[-/](\d{4})/);
   if (dk) return `${dk[3]}-${dk[2]}-${dk[1]}`;
-  // OSR M/D/YY
   const osr = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2})$/);
   if (osr) {
     const yy = Number(osr[3]);
