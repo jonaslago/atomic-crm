@@ -528,23 +528,9 @@ Deno.serve(async (req) => {
           detail: successDetail,
         });
 
-        // §96 receipt mail — success
-        try {
-          const now = new Date().toISOString().replace("T", " ").slice(0, 19);
-          await sendReceiptMail(
-            token,
-            `✅ CRM-import ${now}`,
-            [
-              `Import gennemført ${now}`,
-              "",
-              ...importResults,
-              "",
-              `Filer: ${fileTypes.map((f) => f.name).join(", ")}`,
-            ].join("\n"),
-          );
-        } catch (mailErr) {
-          console.error("Receipt mail failed:", mailErr);
-        }
+        // §96 (1. okt 2026): no receipt mail on success. Silence means
+        // it's working. Status is visible in the top bar (Salgsdata pr.
+        // <dato>) and in sync_runs_lago. Only errors get mailed.
       } catch (importErr) {
         const errMsg =
           importErr instanceof Error
