@@ -13,7 +13,9 @@
 /** Read an Excel file from bytes into a 2D array of raw cell values. */
 export async function readExcelGridFromBytes(bytes: Uint8Array): Promise<unknown[][]> {
   // Use xlsx-lite (community edition, much smaller than full SheetJS)
-  const XLSX = await import("https://cdn.sheetjs.com/xlsx-0.20.3/package/xlsx.mjs");
+  // npm:xlsx caused WORKER_RESOURCE_LIMIT. Use xlsx-lite via esm.sh
+  // which tree-shakes to only the read path (~1MB vs ~4MB).
+  const XLSX = await import("https://esm.sh/xlsx@0.18.5?bundle");
   const workbook = XLSX.read(bytes, { type: "array" });
   const sheetName = workbook.SheetNames[0];
   if (!sheetName) return [];
