@@ -212,6 +212,25 @@ Deno.serve(async (req) => {
     }
 
     const token = await getGraphToken();
+
+    // Debug mode: list all unread mails without subject filter
+    let body: Record<string, unknown> = {};
+    try { body = await req.json(); } catch { /* no body */ }
+    if (body?.debug === true) {
+      const allUnread = await fetchUnreadMails(token);
+      return new Response(JSON.stringify({
+        unread_count: allUnread.length,
+        mails: allUnread.map((m) => ({
+          id: m.id,
+          internetMessageId: m.internetMessageId,
+          subject: m.subject,
+          from: m.from?.emailAddress?.address ?? null,
+          received: m.receivedDateTime,
+          hasAttachments: m.hasAttachments,
+        })),
+      }), { headers: { "Content-Type": "application/json" } });
+    }
+
     const allMessages = await fetchUnreadMails(token);
     // Client-side sender + subject filter. Graph $filter is unreliable
     // for from/emailAddress/address combined queries.
