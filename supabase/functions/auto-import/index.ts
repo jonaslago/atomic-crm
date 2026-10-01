@@ -102,7 +102,7 @@ async function fetchUnreadMails(token: string): Promise<GraphMessage[]> {
     `?$filter=${encodeURIComponent(filter)}` +
     `&$select=id,internetMessageId,subject,receivedDateTime,hasAttachments,from` +
     `&$orderby=receivedDateTime asc` +
-    `&$top=10`;
+    `&$top=1`; // Process one mail per invocation to stay within memory
   const res = await fetch(url, {
     headers: { Authorization: `Bearer ${token}` },
   });
