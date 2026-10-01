@@ -289,7 +289,6 @@ Deno.serve(async (req) => {
 
       // §95-2: parse + gate + import each file type
       const importResults: string[] = [];
-      let anyFailed = false;
 
       // Convert attachments to bytes map
       const bytesMap = new Map<string, Uint8Array>();
@@ -301,111 +300,89 @@ Deno.serve(async (req) => {
         bytesMap.set(f.type!, bytes);
       }
 
-      // Import Produkttransaktioner
-      if (bytesMap.has("produkttransaktioner")) {
-        try {
+      // §95 §3e + §95-fix: sync_runs logging is a CONDITION, not a
+      // side effect. If we can't log, the import has not succeeded —
+      // and the mail stays unread for retry. A silent log failure is
+      // the most dangerous property the function can have.
+      async function logRun(datasaet: string, raekker: number, detail: string) {
+        const { error } = await supabaseAdmin.from("sync_runs_lago").insert({
+          datasaet,
+          kilde: "auto-import",
+          raekker,
+          er_testdata: false,
+          note: `msgid:${msg.internetMessageId} · ${detail}`,
+        });
+        if (error) {
+          throw new Error(`sync_runs_lago INSERT fejlede: ${error.message}`);
+        }
+      }
+
+      try {
+        // Import Produkttransaktioner
+        if (bytesMap.has("produkttransaktioner")) {
           const r = await importProdukttransaktioner(
             bytesMap.get("produkttransaktioner")!,
             supabaseAdmin,
           );
-          if (r.ok) {
-            importResults.push(
-              `Produkttransaktioner: ${r.rowsImported} rækker. ${r.detail ?? ""}`,
-            );
-            await supabaseAdmin.from("sync_runs_lago").insert({
-              datasaet: "sales_monthly",
-              kilde: "auto-import",
-              raekker: r.rowsImported,
-              er_testdata: false,
-              note: `msgid:${msg.internetMessageId} · ${r.detail ?? ""}`,
-            });
-          } else {
-            anyFailed = true;
-            importResults.push(
-              `Produkttransaktioner FEJLET: ${r.gateFailure ?? "ukendt"}`,
-            );
+          if (!r.ok) {
+            throw new Error(`Produkttransaktioner port: ${r.gateFailure}`);
           }
-        } catch (e) {
-          anyFailed = true;
+          await logRun("sales_monthly", r.rowsImported, r.detail ?? "");
           importResults.push(
-            `Produkttransaktioner FEJL: ${e instanceof Error ? e.message : String(e)}`,
+            `Produkttransaktioner: ${r.rowsImported} rækker. ${r.detail ?? ""}`,
           );
         }
-      }
 
-      // Import Åbne ordrer + noter (transactional via RPC)
-      if (bytesMap.has("aabne_ordrer")) {
-        try {
+        // Import Åbne ordrer + noter (transactional via RPC)
+        if (bytesMap.has("aabne_ordrer")) {
           const r = await importAabneOrdrer(
             bytesMap.get("aabne_ordrer")!,
             bytesMap.get("aabne_ordrer_noter") ?? null,
             supabaseAdmin,
           );
-          if (r.ok) {
-            importResults.push(
-              `Åbne ordrer: ${r.rowsImported} rækker. ${r.detail ?? ""}`,
-            );
-            await supabaseAdmin.from("sync_runs_lago").insert({
-              datasaet: "open_orders",
-              kilde: "auto-import",
-              raekker: r.rowsImported,
-              er_testdata: false,
-              note: `msgid:${msg.internetMessageId} · ${r.detail ?? ""}`,
-            });
-          } else {
-            anyFailed = true;
-            importResults.push(
-              `Åbne ordrer FEJLET: ${r.gateFailure ?? "ukendt"}`,
-            );
+          if (!r.ok) {
+            throw new Error(`Åbne ordrer port: ${r.gateFailure}`);
           }
-        } catch (e) {
-          anyFailed = true;
+          await logRun("open_orders", r.rowsImported, r.detail ?? "");
           importResults.push(
-            `Åbne ordrer FEJL: ${e instanceof Error ? e.message : String(e)}`,
+            `Åbne ordrer: ${r.rowsImported} rækker. ${r.detail ?? ""}`,
           );
         }
-      }
 
-      // Import Kunder (natligt only)
-      if (bytesMap.has("kunder")) {
-        try {
-          const r = await importKunder(
-            bytesMap.get("kunder")!,
-            supabaseAdmin,
-          );
-          if (r.ok) {
-            importResults.push(
-              `Kunder: ${r.rowsImported} rækker. ${r.detail ?? ""}`,
-            );
-          } else {
-            importResults.push(
-              `Kunder: ${r.gateFailure ?? "ikke implementeret serverside"}`,
-            );
-          }
-        } catch (e) {
-          importResults.push(
-            `Kunder FEJL: ${e instanceof Error ? e.message : String(e)}`,
-          );
+        // Import Kunder (natligt only — placeholder)
+        if (bytesMap.has("kunder")) {
+          importResults.push("Kunder: natlig manuel import (auto ikke bygget)");
         }
-      }
 
-      // Produkter (natligt only) — placeholder
-      if (bytesMap.has("produkter")) {
-        importResults.push("Produkter: kun natlig manuel import");
-      }
+        // Produkter (natligt only — placeholder)
+        if (bytesMap.has("produkter")) {
+          importResults.push("Produkter: natlig manuel import (auto ikke bygget)");
+        }
 
-      // Mark as read only if no critical failure
-      if (!anyFailed) {
+        // §95 §3e: mark as read ONLY after everything succeeded,
+        // INCLUDING the sync_runs log. If anything threw above,
+        // we land in catch and the mail stays unread.
         await markAsRead(token, msg.id);
-      }
 
-      results.push({
-        messageId: msg.internetMessageId,
-        subject: msg.subject,
-        files: fileTypes.map((f) => f.name),
-        status: anyFailed ? "error" : "imported",
-        detail: importResults.join(" | "),
-      });
+        results.push({
+          messageId: msg.internetMessageId,
+          subject: msg.subject,
+          files: fileTypes.map((f) => f.name),
+          status: "imported",
+          detail: importResults.join(" | "),
+        });
+      } catch (importErr) {
+        // Import or logging failed — mail stays unread for retry.
+        results.push({
+          messageId: msg.internetMessageId,
+          subject: msg.subject,
+          files: fileTypes.map((f) => f.name),
+          status: "error",
+          detail: importErr instanceof Error
+            ? importErr.message
+            : String(importErr),
+        });
+      }
     }
 
     return new Response(JSON.stringify({ results }), {
