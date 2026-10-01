@@ -271,34 +271,27 @@ Deno.serve(async (req) => {
         continue;
       }
 
-      // Store raw files in Supabase Storage for replay
-      for (const f of fileTypes) {
-        const bytes = Uint8Array.from(
-          atob(f.attachment.contentBytes),
-          (c) => c.charCodeAt(0),
-        );
-        const path = `auto-import/${new Date().toISOString().slice(0, 10)}/${msg.internetMessageId}/${f.name}`;
-        await supabaseAdmin.storage
-          .from("attachments")
-          .upload(path, bytes, {
-            contentType:
-              "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            upsert: true,
-          });
-      }
+      // TODO: Store raw files in Supabase Storage for replay.
+      // Temporarily disabled to reduce peak memory — decoding all
+      // attachments for storage AND parsing doubles the footprint.
+      // Re-enable after confirming parsing fits in memory alone.
 
       // §95-2: parse + gate + import each file type
       const importResults: string[] = [];
 
-      // Convert attachments to bytes map
-      const bytesMap = new Map<string, Uint8Array>();
-      for (const f of fileTypes) {
-        const bytes = Uint8Array.from(
-          atob(f.attachment.contentBytes),
+      // Convert attachments to bytes — one at a time to limit peak memory.
+      // Produkttransaktioner.xlsx is ~8MB (60k rows); decoding base64 in
+      // memory alongside the parsed grid can exceed Edge Function limits.
+      // We process each file sequentially instead of loading all at once.
+      function decodeAttachment(a: GraphAttachment): Uint8Array {
+        return Uint8Array.from(
+          atob(a.contentBytes),
           (c) => c.charCodeAt(0),
         );
-        bytesMap.set(f.type!, bytes);
       }
+      const filesByType = new Map(
+        fileTypes.map((f) => [f.type!, f.attachment]),
+      );
 
       // §95 §3e + §95-fix: sync_runs logging is a CONDITION, not a
       // side effect. If we can't log, the import has not succeeded —
@@ -318,12 +311,12 @@ Deno.serve(async (req) => {
       }
 
       try {
-        // Import Produkttransaktioner
-        if (bytesMap.has("produkttransaktioner")) {
-          const r = await importProdukttransaktioner(
-            bytesMap.get("produkttransaktioner")!,
-            supabaseAdmin,
-          );
+        // Process each file type sequentially — decode on demand to
+        // limit peak memory. Produkttransaktioner alone is ~8MB base64.
+
+        if (filesByType.has("produkttransaktioner")) {
+          const bytes = decodeAttachment(filesByType.get("produkttransaktioner")!);
+          const r = await importProdukttransaktioner(bytes, supabaseAdmin);
           if (!r.ok) {
             throw new Error(`Produkttransaktioner port: ${r.gateFailure}`);
           }
@@ -333,13 +326,12 @@ Deno.serve(async (req) => {
           );
         }
 
-        // Import Åbne ordrer + noter (transactional via RPC)
-        if (bytesMap.has("aabne_ordrer")) {
-          const r = await importAabneOrdrer(
-            bytesMap.get("aabne_ordrer")!,
-            bytesMap.get("aabne_ordrer_noter") ?? null,
-            supabaseAdmin,
-          );
+        if (filesByType.has("aabne_ordrer")) {
+          const ordreBytes = decodeAttachment(filesByType.get("aabne_ordrer")!);
+          const noteBytes = filesByType.has("aabne_ordrer_noter")
+            ? decodeAttachment(filesByType.get("aabne_ordrer_noter")!)
+            : null;
+          const r = await importAabneOrdrer(ordreBytes, noteBytes, supabaseAdmin);
           if (!r.ok) {
             throw new Error(`Åbne ordrer port: ${r.gateFailure}`);
           }
@@ -349,13 +341,11 @@ Deno.serve(async (req) => {
           );
         }
 
-        // Import Kunder (natligt only — placeholder)
-        if (bytesMap.has("kunder")) {
+        if (filesByType.has("kunder")) {
           importResults.push("Kunder: natlig manuel import (auto ikke bygget)");
         }
 
-        // Produkter (natligt only — placeholder)
-        if (bytesMap.has("produkter")) {
+        if (filesByType.has("produkter")) {
           importResults.push("Produkter: natlig manuel import (auto ikke bygget)");
         }
 
