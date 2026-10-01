@@ -46,8 +46,11 @@ export async function readExcelGridFromBytes(
   // Parse rows
   const rows: unknown[][] = [];
   const rowRegex = /<row[^>]*>([\s\S]*?)<\/row>/g;
-  const cellRegex =
-    /<c\s[^>]*r="([A-Z]+)\d+"[^>]*(?:\st="([^"]*)")?[^>]*>(?:[\s\S]*?<v>([^<]*)<\/v>)?[\s\S]*?<\/c>/g;
+  // Cell regex must handle varying attribute order: r, t, s can appear
+  // in any order. We extract r (cell ref) and optionally t (type) and
+  // v (value) separately for robustness.
+  // Match both <c ...>...</c> and self-closing <c .../>
+  const cellRegex = /<c\s([^>]*?)(?:>([\s\S]*?)<\/c>|\/>)/g;
 
   let rowMatch;
   while ((rowMatch = rowRegex.exec(sheetXml)) !== null) {
@@ -56,9 +59,21 @@ export async function readExcelGridFromBytes(
     let cellMatch;
     cellRegex.lastIndex = 0;
     while ((cellMatch = cellRegex.exec(cellsXml)) !== null) {
-      const col = colToIndex(cellMatch[1]);
-      const type = cellMatch[2]; // s=shared string
-      const rawVal = cellMatch[3];
+      const attrs = cellMatch[1];
+      const inner = cellMatch[2];
+
+      // Extract cell reference (e.g. "A1", "B2")
+      const refMatch = attrs.match(/r="([A-Z]+)\d+"/);
+      if (!refMatch) continue;
+      const col = colToIndex(refMatch[1]);
+
+      // Extract type (t="s" for shared string, t="b" for boolean, etc.)
+      const typeMatch = attrs.match(/t="([^"]*)"/);
+      const type = typeMatch?.[1] ?? null;
+
+      // Extract value from <v>...</v>
+      const valMatch = inner.match(/<v>([^<]*)<\/v>/);
+      const rawVal = valMatch?.[1] ?? null;
 
       while (row.length <= col) row.push(null);
 
