@@ -42,12 +42,18 @@ const FILE_MAP: Record<string, string> = {
   "Produkttransaktioner": "produkttransaktioner",
 };
 
-/** Identify import type from attachment filename. */
+/** Identify import type from attachment filename.
+ *  Matches on prefix — "Produkttransaktioner - nye 7 dage.xlsx"
+ *  matches "Produkttransaktioner". Longest prefix wins to avoid
+ *  "Produkter" matching before "Produkter - udgået". */
 function identifyFile(filename: string): string | null {
-  // Strip .xlsx extension and match
   const base = filename.replace(/\.xlsx$/i, "").trim();
-  for (const [pattern, type] of Object.entries(FILE_MAP)) {
-    if (base === pattern) return type;
+  // Sort patterns by length descending so longer matches win
+  const sorted = Object.entries(FILE_MAP).sort(
+    (a, b) => b[0].length - a[0].length,
+  );
+  for (const [pattern, type] of sorted) {
+    if (base === pattern || base.startsWith(pattern + " ")) return type;
   }
   return null;
 }
