@@ -117,7 +117,7 @@ export async function importProdukttransaktioner(
   bytes: Uint8Array,
   supabase: SupabaseClient,
 ): Promise<ImportResult> {
-  const grid = readExcelGridFromBytes(bytes);
+  const grid = await readExcelGridFromBytes(bytes);
 
   // Find header row
   let headerRowIndex: number;
@@ -299,7 +299,7 @@ export async function importAabneOrdrer(
   supabase: SupabaseClient,
 ): Promise<ImportResult> {
   // Parse ordrer
-  const ordreGrid = readExcelGridFromBytes(ordreBytes);
+  const ordreGrid = await readExcelGridFromBytes(ordreBytes);
   let headerIdx: number;
   try {
     try { headerIdx = findHeaderRow(ordreGrid, "Ordrenr"); }

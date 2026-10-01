@@ -10,11 +10,10 @@
  * we need here to avoid importing from src/ (different module system).
  */
 
-// @deno-types="npm:@types/xlsx"
-import * as XLSX from "npm:xlsx@0.18.5";
-
 /** Read an Excel file from bytes into a 2D array of raw cell values. */
-export function readExcelGridFromBytes(bytes: Uint8Array): unknown[][] {
+export async function readExcelGridFromBytes(bytes: Uint8Array): Promise<unknown[][]> {
+  // Lazy-load SheetJS to avoid loading 4MB at function startup
+  const XLSX = await import("npm:xlsx@0.18.5");
   const workbook = XLSX.read(bytes, { type: "array" });
   const sheetName = workbook.SheetNames[0];
   if (!sheetName) return [];

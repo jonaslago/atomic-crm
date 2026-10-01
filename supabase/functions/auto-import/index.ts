@@ -273,11 +273,9 @@ Deno.serve(async (req) => {
         a.name.toLowerCase().endsWith(".xlsx"),
       );
 
-      // Skip files >5MB — those are the full nightly exports (60k rows).
-      // The hourly files are <1MB. Nightly import stays manual for now.
-      const MAX_FILE_SIZE = 5 * 1024 * 1024;
+      // All produkttransaktioner files are now 7-day windows (<1MB).
+      // No size filter needed — Jonas confirmed 1. okt.
       const fileTypes = xlsxMeta
-        .filter((a) => a.size <= MAX_FILE_SIZE)
         .map((a) => ({ name: a.name, type: identifyFile(a.name), attachmentId: a.id }))
         .filter((f) => f.type != null);
 
