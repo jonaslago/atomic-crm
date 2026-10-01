@@ -42,6 +42,8 @@ export interface SalesMonthlyRow {
   visma_customer_no: string;
   aar: number;
   maaned: number;
+  /** §28 (1. okt 2026): daily grain. YYYY-MM-DD from Fakturadato. */
+  fakturadato: string;
   produktnr: string; // "" hvis mangler
   salgstype: string; // "" hvis mangler
   belob: number;
@@ -49,6 +51,8 @@ export interface SalesMonthlyRow {
   // Tillæg B: vareforbrug, aggregeret på samme kornstørrelse som
   // belob og antal. Ingen visning bygget nu — dækningsgrad-arsenalet.
   forbrugt: number;
+  /** §28d: kampagne from source file. Null if empty. */
+  kampagne: string | null;
 }
 
 export type ProdukttransaktionerPayload = SalesMonthlyRow[];

@@ -101,24 +101,28 @@ export async function importProdukttransaktioner(
   // A DELETE would wipe the entire history. This is different from
   // open_orders_lago which uses transactional replace (snapshot).
   //
-  // Idempotent upsert på (kundenr, år, måned, salgstype). Vi
-  // OVERSKRIVER belob — hvis samme nøgle sendes to gange, vinder
-  // sidste værdi (matches importen af "kør igen med rettet fil").
+  // §28 (1. okt 2026): daily grain. Key includes fakturadato so a
+  // 7-day file writes 7 complete days. Idempotent upsert — same key
+  // twice → last value wins (matches "kør igen med rettet fil").
   await inBatches(payload, async (batch) => {
     const rows = batch.map((r) => ({
       visma_customer_no: r.visma_customer_no,
       aar: r.aar,
       maaned: r.maaned,
+      fakturadato: r.fakturadato,
       produktnr: r.produktnr,
       salgstype: r.salgstype,
       belob: r.belob,
       antal: r.antal,
+      forbrugt: r.forbrugt,
+      kampagne: r.kampagne,
       er_testdata,
       kilde: "import" as const,
       synced_at: new Date().toISOString(),
     }));
     const { error } = await supabase.from("sales_monthly_lago").upsert(rows, {
-      onConflict: "visma_customer_no,aar,maaned,produktnr,salgstype",
+      onConflict:
+        "visma_customer_no,aar,maaned,produktnr,salgstype,fakturadato",
     });
     if (error) throw error;
   });

@@ -80,14 +80,19 @@ export async function parseProdukttransaktioner({
       rowErrors: [],
       headerError: {
         kind: "header-missing",
-        missingColumns: ["Kundenr / Kundenr. (header-rækken kunne ikke findes)"],
+        missingColumns: [
+          "Kundenr / Kundenr. (header-rækken kunne ikke findes)",
+        ],
         foundHeaders: [],
       },
     };
   }
 
   const headerMap = buildHeaderMap(grid[headerRowIndex]);
-  const missing = checkRequiredColumnAliases(headerMap, REQUIRED_COLUMN_ALIASES);
+  const missing = checkRequiredColumnAliases(
+    headerMap,
+    REQUIRED_COLUMN_ALIASES,
+  );
   if (missing.length > 0) {
     return {
       ok: false,
@@ -190,8 +195,11 @@ export async function parseProdukttransaktioner({
       idx.forbrugt >= 0 ? (cellNumber(row[idx.forbrugt]) ?? 0) : 0;
     const salgstype = cellString(row[idx.salgstype]) ?? "";
     const produktnr = cellString(row[idx.produktnr]) ?? "";
+    const kampagne = idx.kampagne >= 0 ? cellString(row[idx.kampagne]) : null;
 
-    const key = `${kundenr}|${aar}|${maaned}|${produktnr}|${salgstype}`;
+    // §28 (1. okt 2026): daily grain. Key includes fakturadato so a
+    // 7-day file writes 7 complete days — never a partial month.
+    const key = `${kundenr}|${dateStr}|${produktnr}|${salgstype}`;
     const existing = aggregated.get(key);
     if (existing) {
       existing.belob += belob;
@@ -202,11 +210,13 @@ export async function parseProdukttransaktioner({
         visma_customer_no: kundenr,
         aar,
         maaned,
+        fakturadato: dateStr,
         produktnr,
         salgstype,
         belob,
         antal,
         forbrugt,
+        kampagne,
       });
     }
     rowsAfterFilter++;
