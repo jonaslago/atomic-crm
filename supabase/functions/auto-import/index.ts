@@ -133,13 +133,25 @@ async function listAttachments(
   return (data.value ?? []) as Array<{ id: string; name: string; size: number }>;
 }
 
-/** Download one attachment's content. Loaded one at a time to stay
- *  within Edge Function memory limits (~150MB). */
+/** Download one attachment's content as raw bytes via the $value
+ *  endpoint. This streams binary instead of base64-in-JSON, halving
+ *  memory usage. Falls back to JSON+base64 if $value fails. */
 async function downloadAttachment(
   token: string,
   messageId: string,
   attachmentId: string,
 ): Promise<Uint8Array> {
+  // Try $value endpoint first (binary stream, much less memory)
+  const valueUrl =
+    `https://graph.microsoft.com/v1.0/users/${MAILBOX}/messages/${messageId}/attachments/${attachmentId}/$value`;
+  const valueRes = await fetch(valueUrl, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (valueRes.ok) {
+    const buf = await valueRes.arrayBuffer();
+    return new Uint8Array(buf);
+  }
+  // Fallback: JSON with base64
   const url =
     `https://graph.microsoft.com/v1.0/users/${MAILBOX}/messages/${messageId}/attachments/${attachmentId}`;
   const res = await fetch(url, {
@@ -261,7 +273,11 @@ Deno.serve(async (req) => {
         a.name.toLowerCase().endsWith(".xlsx"),
       );
 
+      // Skip files >5MB — those are the full nightly exports (60k rows).
+      // The hourly files are <1MB. Nightly import stays manual for now.
+      const MAX_FILE_SIZE = 5 * 1024 * 1024;
       const fileTypes = xlsxMeta
+        .filter((a) => a.size <= MAX_FILE_SIZE)
         .map((a) => ({ name: a.name, type: identifyFile(a.name), attachmentId: a.id }))
         .filter((f) => f.type != null);
 
