@@ -141,8 +141,7 @@ async function downloadAttachment(
   attachmentId: string,
 ): Promise<Uint8Array> {
   const url =
-    `https://graph.microsoft.com/v1.0/users/${MAILBOX}/messages/${messageId}/attachments/${attachmentId}` +
-    `?$select=contentBytes`;
+    `https://graph.microsoft.com/v1.0/users/${MAILBOX}/messages/${messageId}/attachments/${attachmentId}`;
   const res = await fetch(url, {
     headers: { Authorization: `Bearer ${token}` },
   });
