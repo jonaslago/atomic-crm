@@ -84,7 +84,7 @@ export function OrdreBunkerWidget() {
   });
 
   const { bucketRows, reservationRow, total, epAntal } = useMemo(() => {
-    const lines = query.data ?? [];
+    const lines = query.data?.rows ?? [];
 
     // Aggregate per order
     const orders = new Map<string, OrderAgg>();
@@ -174,6 +174,8 @@ export function OrdreBunkerWidget() {
       error={query.error as Error | null}
       isEmpty={bucketRows.length === 0}
       emptyState="Ingen åbne ordrer."
+      truncated={query.data?.truncated}
+      truncatedRowCount={query.data?.rows.length}
     >
       <div className="overflow-x-auto">
         <table className="w-full text-sm">

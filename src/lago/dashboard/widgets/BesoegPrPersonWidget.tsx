@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 
 import { getSupabaseClient } from "@/components/atomic-crm/providers/supabase/supabase";
+import { paginatedFetch } from "@/lago/ui/paginatedFetch";
 import { thisIsoWeek, toIsoDate } from "@/lago/ui/periodRange";
 
 import { WidgetShell } from "../WidgetShell";
@@ -51,15 +52,22 @@ async function fetchBesoegPrPerson(): Promise<PersonRow[]> {
 
   const salesIds = sellers.map((s) => s.id);
 
-  // All visit activities (type_code=1) from this week onwards
-  const activitiesRes = await supabase
-    .from("customer_activities_lago")
-    .select("sales_id, activity_type_code, activity_date, done")
-    .in("sales_id", salesIds)
-    .is("deleted_at", null)
-    .eq("activity_type_code", 1)
-    .gte("activity_date", weekStart);
-  if (activitiesRes.error) throw activitiesRes.error;
+  // §101-3: paginated to avoid silent truncation
+  const activitiesResult = await paginatedFetch<{
+    sales_id: number;
+    activity_type_code: number | null;
+    activity_date: string;
+    done: boolean;
+  }>({
+    table: "customer_activities_lago",
+    select: "sales_id, activity_type_code, activity_date, done",
+    filters: (q) =>
+      q
+        .in("sales_id", salesIds)
+        .is("deleted_at", null)
+        .eq("activity_type_code", 1)
+        .gte("activity_date", weekStart),
+  });
 
   const map = new Map<number, PersonRow>();
   for (const s of sellers) {
@@ -73,7 +81,7 @@ async function fetchBesoegPrPerson(): Promise<PersonRow[]> {
     });
   }
 
-  for (const a of (activitiesRes.data ?? []) as Array<{
+  for (const a of (activitiesResult.rows ?? []) as Array<{
     sales_id: number;
     activity_type_code: number | null;
     activity_date: string;

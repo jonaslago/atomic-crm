@@ -40,7 +40,7 @@ export function OrdreAlderWidget() {
   });
 
   const result = useMemo(() => {
-    const lines = query.data ?? [];
+    const lines = query.data?.rows ?? [];
     if (lines.length === 0) return null;
     const ages = [0, 0, 0, 0, 0]; // 0-7, 8-14, 15-30, 31-60, 60+
     let reservation = 0;
@@ -96,6 +96,8 @@ export function OrdreAlderWidget() {
       error={query.error as Error | null}
       isEmpty={!result}
       emptyState="Ingen åbne ordrer."
+      truncated={query.data?.truncated}
+      truncatedRowCount={query.data?.rows.length}
     >
       {result && (
         <div className="overflow-x-auto">

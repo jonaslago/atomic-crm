@@ -98,4 +98,12 @@ export interface WidgetShellProps {
    * at undgå dobbelt padding.
    */
   noPanel?: boolean;
+  /**
+   * §101-3 (1. okt 2026): the dataset was truncated. When true, the
+   * widget shows nothing — not a wrong number. An empty space gets
+   * investigated; a wrong number gets repeated.
+   */
+  truncated?: boolean;
+  /** Number of rows that were fetched before truncation. */
+  truncatedRowCount?: number;
 }

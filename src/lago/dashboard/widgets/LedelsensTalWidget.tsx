@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 
 import { getSupabaseClient } from "@/components/atomic-crm/providers/supabase/supabase";
+import { paginatedFetch } from "@/lago/ui/paginatedFetch";
 
 import { WidgetShell } from "../WidgetShell";
 
@@ -106,13 +107,21 @@ async function fetchLedelsensTal(): Promise<SellerRow[]> {
   // Alle relevante customer_activities_lago-rækker i ét kald — grupper
   // client-side. Det er billigt (nogle hundrede rækker i alt) og undgår
   // fem tur/retur pr. sælger.
-  const activitiesRes = await supabase
-    .from("customer_activities_lago")
-    .select("sales_id, activity_type_code, activity_date, done")
-    .in("sales_id", salesIds)
-    .is("deleted_at", null)
-    .gte("activity_date", weekStart);
-  if (activitiesRes.error) throw activitiesRes.error;
+  // §101-3: paginated to avoid silent truncation
+  const activitiesResult = await paginatedFetch<{
+    sales_id: number;
+    activity_type_code: number | null;
+    activity_date: string;
+    done: boolean;
+  }>({
+    table: "customer_activities_lago",
+    select: "sales_id, activity_type_code, activity_date, done",
+    filters: (q) =>
+      q
+        .in("sales_id", salesIds)
+        .is("deleted_at", null)
+        .gte("activity_date", weekStart),
+  });
 
   // Brief 72 tillæg A §3 (21. sep 2026): midlertidigt filtrerer vi på
   // kundens ansvarlige sælger (companies.sales_id) i stedet for
@@ -145,7 +154,7 @@ async function fetchLedelsensTal(): Promise<SellerRow[]> {
     });
   }
 
-  for (const a of (activitiesRes.data ?? []) as Array<{
+  for (const a of (activitiesResult.rows ?? []) as Array<{
     sales_id: number;
     activity_type_code: number | null;
     activity_date: string;

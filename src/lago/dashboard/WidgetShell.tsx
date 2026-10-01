@@ -52,6 +52,8 @@ export function WidgetShell({
   count,
   headerExtra,
   noPanel,
+  truncated,
+  truncatedRowCount,
 }: WidgetShellProps) {
   // Brief 55 tillæg A (17. sep 2026): teknikken hører i konsollen —
   // brugeren skal ikke se "e.data.map is not a function" med
@@ -135,6 +137,19 @@ export function WidgetShell({
             </div>
           );
           return <Panel>{errBody}</Panel>;
+        }
+        if (truncated) {
+          return (
+            <Panel>
+              <div className="flex items-start gap-2 text-sm text-[var(--st-amber-fg)]">
+                <Icon icon={AlertCircle} size="sm" className="mt-0.5" />
+                <span className="text-[var(--fg-2)]">
+                  Datasættet er afkortet ({truncatedRowCount ?? "?"} rækker
+                  hentet). Tallet vises ikke.
+                </span>
+              </div>
+            </Panel>
+          );
         }
         if (isLoading) {
           return (

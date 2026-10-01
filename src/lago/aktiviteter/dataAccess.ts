@@ -1,4 +1,5 @@
 import { getSupabaseClient } from "@/components/atomic-crm/providers/supabase/supabase";
+import { paginatedFetch } from "@/lago/ui/paginatedFetch";
 
 /**
  * Brief 44 (16. sep 2026) — én samlet aktivitetsside.
@@ -107,30 +108,52 @@ export async function fetchAktivitetsside(
   const supabase = getSupabaseClient();
   const today = todayIso();
 
+  // §101-3: paginated reads for activities. Both use the same
+  // pagination helper to avoid silent truncation at 1000 rows.
+  const ACTIVITY_SELECT =
+    "id, company_id, activity_date, activity_type_code, activity_type, description, done, sales_id, sales_name, companies!inner(name)";
+
   // 1a) Completed activities within the period window.
-  const activityRes = await supabase
-    .from("customer_activities_lago")
-    .select(
-      "id, company_id, activity_date, activity_type_code, activity_type, description, done, sales_id, sales_name, companies!inner(name)",
-    )
-    .is("deleted_at", null)
-    .eq("done", true)
-    .gte("activity_date", input.fromIso)
-    .lte("activity_date", input.toIso)
-    .order("activity_date", { ascending: false });
-  if (activityRes.error) throw activityRes.error;
+  const activityResult = await paginatedFetch<{
+    id: number;
+    company_id: number;
+    activity_date: string;
+    activity_type_code: number | null;
+    activity_type: string | null;
+    description: string | null;
+    done: boolean;
+    sales_id: number | null;
+    sales_name: string | null;
+    companies: { name: string } | Array<{ name: string }>;
+  }>({
+    table: "customer_activities_lago",
+    select: ACTIVITY_SELECT,
+    filters: (q) =>
+      q
+        .is("deleted_at", null)
+        .eq("done", true)
+        .gte("activity_date", input.fromIso)
+        .lte("activity_date", input.toIso)
+        .order("activity_date", { ascending: false }),
+  });
 
   // 1b) §24: open (done=false) activities — fetched WITHOUT date filter
-  // so overdue plans (activity_date < fromIso) are always visible.
-  // Same pattern as openTasksRes (§10c).
-  const openActivitiesRes = await supabase
-    .from("customer_activities_lago")
-    .select(
-      "id, company_id, activity_date, activity_type_code, activity_type, description, done, sales_id, sales_name, companies!inner(name)",
-    )
-    .is("deleted_at", null)
-    .eq("done", false);
-  if (openActivitiesRes.error) throw openActivitiesRes.error;
+  const openActivitiesResult = await paginatedFetch<{
+    id: number;
+    company_id: number;
+    activity_date: string;
+    activity_type_code: number | null;
+    activity_type: string | null;
+    description: string | null;
+    done: boolean;
+    sales_id: number | null;
+    sales_name: string | null;
+    companies: { name: string } | Array<{ name: string }>;
+  }>({
+    table: "customer_activities_lago",
+    select: ACTIVITY_SELECT,
+    filters: (q) => q.is("deleted_at", null).eq("done", false),
+  });
 
   // 2) Planlagte besøg via companies_lago.next_visit_planned. Én pr.
   //    kunde. Vi henter kun dem hvor datoen falder inden for perioden.
@@ -171,8 +194,8 @@ export async function fetchAktivitetsside(
   // Backoffice-tildelinger (sales_id NULL) også kan mærkes klart.
   const salesIds = new Set<number>();
   for (const a of [
-    ...(activityRes.data ?? []),
-    ...(openActivitiesRes.data ?? []),
+    ...(activityResult.rows ?? []),
+    ...(openActivitiesResult.rows ?? []),
   ]) {
     if ((a as { sales_id: number | null }).sales_id != null)
       salesIds.add((a as { sales_id: number }).sales_id);
@@ -208,7 +231,7 @@ export async function fetchAktivitetsside(
 
   const rows: ActivityRow[] = [];
 
-  for (const a of (activityRes.data ?? []) as Array<{
+  for (const a of (activityResult.rows ?? []) as Array<{
     id: number;
     company_id: number;
     activity_date: string;
@@ -251,7 +274,7 @@ export async function fetchAktivitetsside(
   // §24: open activities (done=false) — overdue plans and future plans.
   // Future plans beyond toIso are filtered out. Overdue (before fromIso)
   // are always shown with outsideWindow=true — same as §10c for tasks.
-  for (const a of (openActivitiesRes.data ?? []) as Array<{
+  for (const a of (openActivitiesResult.rows ?? []) as Array<{
     id: number;
     company_id: number;
     activity_date: string;
