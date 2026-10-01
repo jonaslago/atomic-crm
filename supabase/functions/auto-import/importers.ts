@@ -184,15 +184,18 @@ export async function importProdukttransaktioner(
   };
 
   const rawRows = grid.slice(headerRowIndex + 1);
+  // §28/§96: daily grain. Key includes fakturadato.
   const aggregated = new Map<string, {
     visma_customer_no: string;
     aar: number;
     maaned: number;
+    fakturadato: string;
     produktnr: string;
     salgstype: string;
     belob: number;
     antal: number;
     forbrugt: number;
+    kampagne: string | null;
   }>();
   let rowsSeen = 0;
   let totalBelob = 0;
@@ -222,8 +225,10 @@ export async function importProdukttransaktioner(
     const forbrugt = idx.forbrugt >= 0 ? (cellNumber(row[idx.forbrugt]) ?? 0) : 0;
     const salgstype = cellString(row[idx.salgstype]) ?? "";
     const produktnr = cellString(row[idx.produktnr]) ?? "";
+    const kampagne = idx.kampagne >= 0 ? cellString(row[idx.kampagne]) : null;
 
-    const key = `${kundenr}|${aar}|${maaned}|${produktnr}|${salgstype}`;
+    // §28/§96: daily grain key includes fakturadato.
+    const key = `${kundenr}|${dateStr}|${produktnr}|${salgstype}`;
     const existing = aggregated.get(key);
     if (existing) {
       existing.belob += belob;
@@ -232,7 +237,8 @@ export async function importProdukttransaktioner(
     } else {
       aggregated.set(key, {
         visma_customer_no: kundenr,
-        aar, maaned, produktnr, salgstype, belob, antal, forbrugt,
+        aar, maaned, fakturadato: dateStr,
+        produktnr, salgstype, belob, antal, forbrugt, kampagne,
       });
     }
     totalBelob += belob;
@@ -272,7 +278,7 @@ export async function importProdukttransaktioner(
     const { error } = await supabase
       .from("sales_monthly_lago")
       .upsert(batch, {
-        onConflict: "visma_customer_no,aar,maaned,produktnr,salgstype",
+        onConflict: "visma_customer_no,aar,maaned,produktnr,salgstype,fakturadato",
       });
     if (error) throw error;
   }
