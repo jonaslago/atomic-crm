@@ -89,13 +89,8 @@ interface GraphMessage {
   from: { emailAddress: { address: string } } | null;
 }
 
-interface GraphAttachment {
-  id: string;
-  name: string;
-  contentType: string;
-  contentBytes: string; // base64
-  size: number;
-}
+// GraphAttachment removed — we list metadata and download one at a
+// time to avoid loading all base64 content into memory at once.
 
 async function fetchUnreadMails(token: string): Promise<GraphMessage[]> {
   // §95: only unread. Sender + subject checked client-side because
@@ -119,20 +114,47 @@ async function fetchUnreadMails(token: string): Promise<GraphMessage[]> {
   return (data.value ?? []) as GraphMessage[];
 }
 
-async function fetchAttachments(
+/** List attachments metadata (no content) to avoid loading all base64 at once. */
+async function listAttachments(
   token: string,
   messageId: string,
-): Promise<GraphAttachment[]> {
-  const url = `https://graph.microsoft.com/v1.0/users/${MAILBOX}/messages/${messageId}/attachments`;
+): Promise<Array<{ id: string; name: string; size: number }>> {
+  const url =
+    `https://graph.microsoft.com/v1.0/users/${MAILBOX}/messages/${messageId}/attachments` +
+    `?$select=id,name,size`;
   const res = await fetch(url, {
     headers: { Authorization: `Bearer ${token}` },
   });
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(`Graph attachments error ${res.status}: ${text}`);
+    throw new Error(`Graph list-attachments error ${res.status}: ${text}`);
   }
   const data = await res.json();
-  return (data.value ?? []) as GraphAttachment[];
+  return (data.value ?? []) as Array<{ id: string; name: string; size: number }>;
+}
+
+/** Download one attachment's content. Loaded one at a time to stay
+ *  within Edge Function memory limits (~150MB). */
+async function downloadAttachment(
+  token: string,
+  messageId: string,
+  attachmentId: string,
+): Promise<Uint8Array> {
+  const url =
+    `https://graph.microsoft.com/v1.0/users/${MAILBOX}/messages/${messageId}/attachments/${attachmentId}` +
+    `?$select=contentBytes`;
+  const res = await fetch(url, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Graph download error ${res.status}: ${text}`);
+  }
+  const data = await res.json();
+  return Uint8Array.from(
+    atob(data.contentBytes),
+    (c) => c.charCodeAt(0),
+  );
 }
 
 async function markAsRead(token: string, messageId: string): Promise<void> {
@@ -234,14 +256,14 @@ Deno.serve(async (req) => {
         continue;
       }
 
-      // Fetch attachments
-      const attachments = await fetchAttachments(token, msg.id);
-      const xlsxFiles = attachments.filter((a) =>
+      // List attachments (metadata only — no content downloaded yet)
+      const attachmentMeta = await listAttachments(token, msg.id);
+      const xlsxMeta = attachmentMeta.filter((a) =>
         a.name.toLowerCase().endsWith(".xlsx"),
       );
 
-      const fileTypes = xlsxFiles
-        .map((a) => ({ name: a.name, type: identifyFile(a.name), attachment: a }))
+      const fileTypes = xlsxMeta
+        .map((a) => ({ name: a.name, type: identifyFile(a.name), attachmentId: a.id }))
         .filter((f) => f.type != null);
 
       if (fileTypes.length === 0) {
@@ -279,19 +301,14 @@ Deno.serve(async (req) => {
       // §95-2: parse + gate + import each file type
       const importResults: string[] = [];
 
-      // Convert attachments to bytes — one at a time to limit peak memory.
-      // Produkttransaktioner.xlsx is ~8MB (60k rows); decoding base64 in
-      // memory alongside the parsed grid can exceed Edge Function limits.
-      // We process each file sequentially instead of loading all at once.
-      function decodeAttachment(a: GraphAttachment): Uint8Array {
-        return Uint8Array.from(
-          atob(a.contentBytes),
-          (c) => c.charCodeAt(0),
-        );
-      }
-      const filesByType = new Map(
-        fileTypes.map((f) => [f.type!, f.attachment]),
+      // Build a lookup from type → attachmentId. Files are downloaded
+      // one at a time during import to stay within memory limits.
+      const idByType = new Map(
+        fileTypes.map((f) => [f.type!, f.attachmentId]),
       );
+      /** Download one file on demand. */
+      const getBytes = (type: string) =>
+        downloadAttachment(token, msg.id, idByType.get(type)!);
 
       // §95 §3e + §95-fix: sync_runs logging is a CONDITION, not a
       // side effect. If we can't log, the import has not succeeded —
@@ -314,8 +331,8 @@ Deno.serve(async (req) => {
         // Process each file type sequentially — decode on demand to
         // limit peak memory. Produkttransaktioner alone is ~8MB base64.
 
-        if (filesByType.has("produkttransaktioner")) {
-          const bytes = decodeAttachment(filesByType.get("produkttransaktioner")!);
+        if (idByType.has("produkttransaktioner")) {
+          const bytes = await getBytes("produkttransaktioner");
           const r = await importProdukttransaktioner(bytes, supabaseAdmin);
           if (!r.ok) {
             throw new Error(`Produkttransaktioner port: ${r.gateFailure}`);
@@ -326,10 +343,10 @@ Deno.serve(async (req) => {
           );
         }
 
-        if (filesByType.has("aabne_ordrer")) {
-          const ordreBytes = decodeAttachment(filesByType.get("aabne_ordrer")!);
-          const noteBytes = filesByType.has("aabne_ordrer_noter")
-            ? decodeAttachment(filesByType.get("aabne_ordrer_noter")!)
+        if (idByType.has("aabne_ordrer")) {
+          const ordreBytes = await getBytes("aabne_ordrer");
+          const noteBytes = idByType.has("aabne_ordrer_noter")
+            ? await getBytes("aabne_ordrer_noter")
             : null;
           const r = await importAabneOrdrer(ordreBytes, noteBytes, supabaseAdmin);
           if (!r.ok) {
@@ -341,11 +358,11 @@ Deno.serve(async (req) => {
           );
         }
 
-        if (filesByType.has("kunder")) {
+        if (idByType.has("kunder")) {
           importResults.push("Kunder: natlig manuel import (auto ikke bygget)");
         }
 
-        if (filesByType.has("produkter")) {
+        if (idByType.has("produkter")) {
           importResults.push("Produkter: natlig manuel import (auto ikke bygget)");
         }
 
