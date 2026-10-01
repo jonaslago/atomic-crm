@@ -21,6 +21,7 @@ interface PersonRow {
   visitedThisWeek: number;
   plannedThisWeek: number;
   plannedLater: number;
+  overdue: number;
 }
 
 async function fetchBesoegPrPerson(): Promise<PersonRow[]> {
@@ -78,6 +79,7 @@ async function fetchBesoegPrPerson(): Promise<PersonRow[]> {
       visitedThisWeek: 0,
       plannedThisWeek: 0,
       plannedLater: 0,
+      overdue: 0,
     });
   }
 
@@ -97,9 +99,14 @@ async function fetchBesoegPrPerson(): Promise<PersonRow[]> {
       if (dateStr === today) row.visitedToday++;
       if (inWeek) row.visitedThisWeek++;
     } else if (!a.done) {
-      // Not done = planned
-      if (inWeek && dateStr >= today) row.plannedThisWeek++;
-      else if (dateStr > weekEnd) row.plannedLater++;
+      if (dateStr < today) {
+        // Overdue plan — date passed, not completed
+        row.overdue++;
+      } else if (inWeek) {
+        row.plannedThisWeek++;
+      } else {
+        row.plannedLater++;
+      }
     }
   }
 
@@ -124,7 +131,8 @@ export function BesoegPrPersonWidget() {
         r.visitedToday === 0 &&
         r.visitedThisWeek === 0 &&
         r.plannedThisWeek === 0 &&
-        r.plannedLater === 0,
+        r.plannedLater === 0 &&
+        r.overdue === 0,
     );
 
   return (
@@ -151,7 +159,10 @@ export function BesoegPrPersonWidget() {
               <th className="pb-2 pr-3 text-right font-medium">
                 Planlagt denne uge
               </th>
-              <th className="pb-2 text-right font-medium">Planlagt senere</th>
+              <th className="pb-2 pr-3 text-right font-medium">
+                Planlagt senere
+              </th>
+              <th className="pb-2 text-right font-medium">Overskredet</th>
             </tr>
           </thead>
           <tbody>
@@ -167,8 +178,18 @@ export function BesoegPrPersonWidget() {
                 <td className="py-2 pr-3 text-right tabular-nums text-[var(--fg)]">
                   {r.plannedThisWeek}
                 </td>
-                <td className="py-2 text-right tabular-nums text-[var(--fg)]">
+                <td className="py-2 pr-3 text-right tabular-nums text-[var(--fg)]">
                   {r.plannedLater}
+                </td>
+                <td
+                  className={
+                    "py-2 text-right tabular-nums " +
+                    (r.overdue > 0
+                      ? "text-[var(--st-red-fg)]"
+                      : "text-[var(--fg)]")
+                  }
+                >
+                  {r.overdue}
                 </td>
               </tr>
             ))}

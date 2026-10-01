@@ -465,12 +465,16 @@ function CustomerRow({
             </span>
             {segment && <SegmentPill segment={segment} />}
             {row.next_planned_at && (
-              <span title={plannedTooltip}>
+              <span
+                title={plannedTooltip}
+                tabIndex={0}
+                role="img"
+                aria-label={plannedTooltip ?? "Planlagt aftale"}
+              >
                 <Icon
                   icon={CalendarClock}
                   size="sm"
                   className="shrink-0 text-[var(--ink)]"
-                  aria-label={plannedTooltip ?? "Planlagt aftale"}
                 />
               </span>
             )}
@@ -545,14 +549,20 @@ function CustomerRow({
             §26b: tooltip with seller name + date. */}
         <span
           className="flex items-center justify-center"
-          title={plannedTooltip}
+          title={row.next_planned_at ? plannedTooltip : undefined}
+          tabIndex={row.next_planned_at ? 0 : undefined}
+          role={row.next_planned_at ? "img" : undefined}
+          aria-label={
+            row.next_planned_at
+              ? (plannedTooltip ?? "Planlagt aftale")
+              : undefined
+          }
         >
           {row.next_planned_at && (
             <Icon
               icon={CalendarClock}
               size="sm"
               className="text-[var(--ink)]"
-              aria-label={plannedTooltip ?? "Planlagt aftale"}
             />
           )}
         </span>

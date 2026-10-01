@@ -15,7 +15,7 @@ export const danishLagoMessages = {
       sections: {
         core_info: "Kerne-info",
         last_visit: "Seneste besøg",
-        open_followups: "Åbne opfølgninger",
+        open_followups: "Åbne opgaver",
         contacts: "Kontaktpersoner",
         recent_notes: "Seneste notater",
         purchase_history: "Købshistorik",
@@ -35,7 +35,7 @@ export const danishLagoMessages = {
         opening_hours_placeholder: "fx Man-fre 09-17, lør 10-14",
       },
       empty: {
-        no_open_tasks: "Ingen åbne opfølgninger.",
+        no_open_tasks: "Ingen åbne opgaver.",
         no_contacts: "Ingen kontaktpersoner endnu.",
         no_notes: "Ingen notater endnu.",
         no_timeline: "Ingen aktivitet endnu.",

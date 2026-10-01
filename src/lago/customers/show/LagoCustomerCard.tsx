@@ -73,7 +73,7 @@ import {
  * står for sektion 3–8 i den rigtige rækkefølge:
  *
  *   3. Hvad skete der sidst (afholdte aktiviteter · noter · opkald)
- *   4. Åbne opfølgninger   (åbne tasks — løfter, ikke spor)
+ *   4. Åbne opgaver   (åbne tasks — løfter, ikke spor)
  *   5. Kontaktpersoner
  *   6. Omsætning
  *   7. Åbne ordrer
@@ -295,7 +295,7 @@ export function HvadSketeDerSidstSection({
 
   const rows = useMemo(() => {
     // Brief 45 §3: kun HISTORIK. Planlagte aktiviteter (isPlanned)
-    // hører i "Åbne opfølgninger" nedenfor — et løfte er ikke et spor.
+    // hører i "Åbne opgaver" nedenfor — et løfte er ikke et spor.
     const activityRows = (data.activities ?? [])
       .filter((a) => a.done === true)
       .map((a) => ({
@@ -589,7 +589,7 @@ export function HvadSketeDerSidstSection({
 }
 
 // ------------------------------------------------------------------
-// 4. Åbne opfølgninger
+// 4. Åbne opgaver
 // ------------------------------------------------------------------
 
 export function AabneOpfoelgningerSection({
@@ -618,13 +618,9 @@ export function AabneOpfoelgningerSection({
   return (
     <Section variant={isLaptop ? "panel" : "divider"}>
       {isLaptop ? (
-        <SectionHeader
-          variant="label"
-          title="Åbne opfølgninger"
-          right={badge}
-        />
+        <SectionHeader variant="label" title="Åbne opgaver" right={badge} />
       ) : (
-        <SectionHeader title="Åbne opfølgninger" right={badge} />
+        <SectionHeader title="Åbne opgaver" right={badge} />
       )}
       {count === 0 ? (
         <p className="text-sm text-[var(--fg-2)]">
