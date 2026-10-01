@@ -1,17 +1,16 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link } from "react-router-dom";
 import { toast } from "sonner";
-
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 
 import { getSupabaseClient } from "@/components/atomic-crm/providers/supabase/supabase";
 import { useActorSalesId } from "@/lago/portefolje/useActorSalesId";
 import { useAuthUserId } from "@/lago/portefolje/useAuthUserId";
 import { useViewSalesId } from "@/lago/portefolje/PortefoljeContext";
+import { Button as LagoButton } from "@/lago/ui/Button";
+import { Panel } from "@/lago/ui/Panel";
 import { readErrorMessage } from "@/lago/ui/errorMessage";
 
 import { WidgetShell } from "../WidgetShell";
+import { CompactTaskRow } from "./CompactTaskRow";
 
 /**
  * Åbne opgaver — kontor/admin-varianten (Domain-brief 18 §4.2,
@@ -107,10 +106,7 @@ async function fetchOpfoelgninger(excludeMySalesId: number | null): Promise<{
   };
 }
 
-const dateFmt = new Intl.DateTimeFormat("da-DK", {
-  day: "numeric",
-  month: "short",
-});
+// dateFmt removed — CompactTaskRow handles date formatting.
 
 /** Parser handoff-markeren og henter afsender + dato hvis den findes. */
 function extractHandoff(text: string | null): {
@@ -238,99 +234,68 @@ export function OpfoelgningerKontorWidget() {
       }
       emptyState="Ingen åbne opgaver lige nu."
     >
-      <ul className="flex flex-col gap-2">
-        {rows.map((r) => {
-          const handoff = extractHandoff(r.text);
-          const salesName = r.sales
-            ? [r.sales.first_name, r.sales.last_name].filter(Boolean).join(" ")
-            : null;
-          const isOwnAssigned =
-            actorSalesId != null && r.sales_id === actorSalesId;
-          const origin = handoff
-            ? `Fra ${handoff.from}, ${handoff.when}`
-            : isOwnAssigned
-              ? "Egen"
-              : salesName
-                ? `Tildelt: ${salesName}`
-                : "Ikke tildelt";
-          const dueLabel = r.due_date
-            ? dateFmt.format(new Date(r.due_date))
-            : null;
-          // Tekst uden handoff-marker, så oprindelsen ikke gentages i
-          // opgave-teksten.
-          const rawText = r.text?.trim() ?? "";
-          const markerIndex = rawText.indexOf(HANDOFF_MARKER);
-          const bodyText =
-            markerIndex >= 0 ? rawText.slice(0, markerIndex).trim() : rawText;
-          const label = bodyText || r.type || "Opgave uden tekst";
-          const clickable = r.contact_id != null;
-          const inner = (
-            <div className="rounded-lg bg-[var(--surface-1)] p-3">
-              <div className="flex items-baseline justify-between gap-2">
-                <div className="min-w-0 flex-1 line-clamp-2 text-base text-[var(--fg)]">
-                  {label}
-                </div>
-                {dueLabel && (
-                  <div className="tabular-nums text-[13px] font-medium text-[var(--fg-3)]">
-                    {dueLabel}
-                  </div>
-                )}
-              </div>
-              <div className="mt-1 flex flex-wrap items-center gap-x-2 text-[13px] text-[var(--fg-2)]">
-                {r.type && (
-                  <Badge
-                    variant="outline"
-                    className="border-[var(--line-strong)] text-[12px] font-normal text-[var(--fg-2)]"
-                  >
-                    {r.type}
-                  </Badge>
-                )}
-                <span
-                  className={
-                    handoff
-                      ? "text-[var(--fg-2)]"
-                      : salesName || isOwnAssigned
-                        ? "text-[var(--fg-2)]"
-                        : "text-[var(--fg-3)]"
-                  }
-                >
-                  {origin}
-                </span>
-              </div>
-              <div className="mt-2">
-                <Button
-                  size="sm"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    markDone.mutate(r.id);
-                  }}
-                  disabled={markDone.isPending && markDone.variables === r.id}
-                  className="min-h-9 gap-1.5 bg-[var(--ink)] font-medium text-white hover:bg-[var(--ink)]/90"
-                >
-                  {markDone.isPending && markDone.variables === r.id
-                    ? "Markerer …"
-                    : "Markér som klaret"}
-                </Button>
-              </div>
-            </div>
-          );
-          return (
-            <li key={r.id}>
-              {clickable ? (
-                <Link
-                  to={`/contacts/${r.contact_id}/show`}
-                  className="block no-underline"
-                >
-                  {inner}
-                </Link>
-              ) : (
-                inner
-              )}
-            </li>
-          );
-        })}
-      </ul>
+      {/* §31c: compact task rows with origin. */}
+      <Panel>
+        <div>
+          {rows.map((r) => {
+            const handoff = extractHandoff(r.text);
+            const salesName = r.sales
+              ? [r.sales.first_name, r.sales.last_name]
+                  .filter(Boolean)
+                  .join(" ")
+              : null;
+            const isOwnAssigned =
+              actorSalesId != null && r.sales_id === actorSalesId;
+            const origin = handoff
+              ? `Fra ${handoff.from}, ${handoff.when}`
+              : isOwnAssigned
+                ? "Egen"
+                : salesName
+                  ? `Tildelt: ${salesName}`
+                  : null;
+            const rawText = r.text?.trim() ?? "";
+            const markerIndex = rawText.indexOf(HANDOFF_MARKER);
+            const bodyText =
+              markerIndex >= 0 ? rawText.slice(0, markerIndex).trim() : rawText;
+            return (
+              <CompactTaskRow
+                key={r.id}
+                id={r.id}
+                text={bodyText || r.type || "Opgave uden tekst"}
+                companyName={null}
+                companyId={null}
+                dueDate={r.due_date}
+                origin={origin}
+                actions={
+                  <KontorTaskAction
+                    onMarkDone={() => markDone.mutate(r.id)}
+                    pending={markDone.isPending && markDone.variables === r.id}
+                  />
+                }
+              />
+            );
+          })}
+        </div>
+      </Panel>
     </WidgetShell>
+  );
+}
+
+function KontorTaskAction({
+  onMarkDone,
+  pending,
+}: {
+  onMarkDone: () => void;
+  pending: boolean;
+}) {
+  return (
+    <LagoButton
+      variant="primary"
+      primaryHeight={false}
+      onClick={onMarkDone}
+      disabled={pending}
+    >
+      {pending ? "Markerer …" : "Klaret"}
+    </LagoButton>
   );
 }

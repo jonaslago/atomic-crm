@@ -1,14 +1,10 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ClockArrowDown, Plus, Send } from "lucide-react";
+import { Plus } from "lucide-react";
 import { useGetIdentity } from "ra-core";
-import { Link } from "react-router-dom";
 import { toast } from "sonner";
 
-import { Button } from "@/components/ui/button";
-
 import { getSupabaseClient } from "@/components/atomic-crm/providers/supabase/supabase";
-import { useConfigurationContext } from "@/components/atomic-crm/root/ConfigurationContext";
 import { useActorSalesId } from "@/lago/portefolje/useActorSalesId";
 import { useAuthUserId } from "@/lago/portefolje/useAuthUserId";
 import {
@@ -16,17 +12,15 @@ import {
   useViewSalesId,
 } from "@/lago/portefolje/PortefoljeContext";
 import { RegistrerModal } from "@/lago/registrer/RegistrerModal";
+import { Button as LagoButton } from "@/lago/ui/Button";
 import { Icon } from "@/lago/ui/Icon";
-import { IconButton } from "@/lago/ui/IconButton";
 import { Panel } from "@/lago/ui/Panel";
-import { RowGroup } from "@/lago/ui/RowGroup";
 import { readErrorMessage } from "@/lago/ui/errorMessage";
 
-import { RowActionsMenu } from "../RowActionsMenu";
 import { WidgetShell } from "../WidgetShell";
 import { NyOpgaveKundePicker } from "./NyOpgaveKundePicker";
-import { SendVidereDialog } from "./SendVidereDialog";
 import { UdskudTaskDialog } from "./UdskudTaskDialog";
+import { CompactTaskRow } from "./CompactTaskRow";
 
 /**
  * Hvad lovede jeg sidst (Domain-brief 34 §1 + tillæg A §1/§6
@@ -165,29 +159,7 @@ function formatHandoffMarker(fullName: string): string {
   return `\n\n${HANDOFF_MARKER} ${dayMonth} af ${fullName}`;
 }
 
-const dateFmt = new Intl.DateTimeFormat("da-DK", {
-  day: "numeric",
-  month: "short",
-});
-
-function dueBadge(dueIso: string | null): {
-  text: string;
-  tone: "red" | "amber" | "neutral";
-} | null {
-  if (!dueIso) return null;
-  const due = new Date(dueIso);
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const tomorrow = new Date(today);
-  tomorrow.setDate(tomorrow.getDate() + 1);
-  if (due < today)
-    return {
-      text: `Forfaldt ${dateFmt.format(due)}`,
-      tone: "red",
-    };
-  if (due < tomorrow) return { text: "Forfalder: I dag", tone: "amber" };
-  return { text: `Forfalder: ${dateFmt.format(due)}`, tone: "neutral" };
-}
+// dateFmt + dueBadge removed — CompactTaskRow handles date display.
 
 export function MineOpgaverWidget() {
   const { data: identity } = useGetIdentity();
@@ -415,30 +387,37 @@ export function MineOpgaverWidget() {
       }
       noPanel
     >
-      {/* Brief 85 §2 (28. sep 2026): ét Panel med RowGroup indeni. */}
+      {/* §31c: compact task rows — one line each. Actions inside
+          the expanded state, not cluttering the collapsed view. */}
       <Panel>
-        <RowGroup>
+        <div>
           {clipped.map((t) => (
-            <li key={t.id}>
-              <TaskCard
-                task={t}
-                onMarkDone={() => markDone.mutate(t.id)}
-                onHandoff={fullName ? () => handoff.mutate(t) : null}
-                handoffPending={
-                  handoff.isPending && handoff.variables?.id === t.id
-                }
-                pending={markDone.isPending && markDone.variables === t.id}
-                error={
-                  markDone.isError && markDone.variables === t.id
-                    ? readErrorMessage(markDone.error)
-                    : null
-                }
-                isCovering={isCovering}
-                coveredName={isCovering ? viewLabel : null}
-              />
-            </li>
+            <CompactTaskRow
+              key={t.id}
+              id={t.id}
+              text={t.text?.trim() || "Opgave uden tekst"}
+              companyName={t.company_name}
+              companyId={t.company_id}
+              dueDate={t.due_date}
+              origin={null}
+              actions={
+                <TaskActions
+                  taskId={t.id}
+                  taskText={t.text}
+                  taskDueDate={t.due_date}
+                  onMarkDone={() => markDone.mutate(t.id)}
+                  onHandoff={fullName ? () => handoff.mutate(t) : null}
+                  markDonePending={
+                    markDone.isPending && markDone.variables === t.id
+                  }
+                  handoffPending={
+                    handoff.isPending && handoff.variables?.id === t.id
+                  }
+                />
+              }
+            />
           ))}
-        </RowGroup>
+        </div>
       </Panel>
       {/* Brief 76 §3: sendt-videre-sektionen. Kun synlig når der ér
           noget at vise — ellers spilder vi ikke plads på "Ingen sendt
@@ -521,198 +500,53 @@ function SendtVidereRow({ task }: { task: TaskRow }) {
   );
 }
 
-function TaskCard({
-  task,
+function TaskActions({
+  taskId,
+  taskText,
+  taskDueDate,
   onMarkDone,
   onHandoff,
+  markDonePending,
   handoffPending,
-  pending,
-  error,
-  isCovering,
-  coveredName,
 }: {
-  task: TaskRow;
+  taskId: number;
+  taskText: string | null;
+  taskDueDate: string | null;
   onMarkDone: () => void;
   onHandoff: (() => void) | null;
+  markDonePending: boolean;
   handoffPending: boolean;
-  pending: boolean;
-  error: string | null;
-  isCovering: boolean;
-  coveredName: string | null;
 }) {
-  const { taskTypes } = useConfigurationContext();
-  const [confirming, setConfirming] = useState(false);
   const [udskudOpen, setUdskudOpen] = useState(false);
-  // Brief 87 §5-hastesag (28. sep 2026): Send videre kræver bekræftelse
-  // på alle bredder. Rulle-tilbagen af task 23 viste hvorfor —
-  // ikonknappen fyrede uden at spørge, sælgeren gjorde intet forkert.
-  // Friktion hører i handlingen, ikke i navigationen.
-  const [handoffOpen, setHandoffOpen] = useState(false);
-  // Brief 85 §9 (28. sep 2026): task.type = "none" er brugerens
-  // eksplicitte fravalg af type. En synlig chip "Ingen" er støj —
-  // etiket for "ikke-type" bidrager ikke. Skjul den.
-  const typeLabel =
-    task.type && task.type !== "none"
-      ? (taskTypes.find((t) => t.value === task.type)?.label ?? task.type)
-      : null;
-  const label =
-    task.text?.trim() ||
-    (typeLabel ? `${typeLabel} uden tekst` : "Opgave uden tekst");
-  const due = dueBadge(task.due_date);
-  const dueClass =
-    due?.tone === "red"
-      ? "text-[var(--st-red-fg)]"
-      : due?.tone === "amber"
-        ? "text-[var(--st-amber-fg)]"
-        : "text-[var(--fg-3)]";
-
   return (
-    <article className="flex flex-col gap-3">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0 flex-1">
-          {/* Brief 85 §10 (28. sep 2026): kundenavnet står øverst på
-              rækken. Uden det kunne sælgeren ikke se, hvem opgaven hørte
-              til, uden at åbne den. Klikbart link fører direkte til
-              kundekortet. */}
-          {task.company_name && task.company_id && (
-            <Link
-              to={`/companies/${task.company_id}/show`}
-              className="block truncate text-[13px] font-bold text-[var(--fg-2)] no-underline hover:underline"
-            >
-              {task.company_name}
-            </Link>
-          )}
-          {/* Brief 43 (16. sep 2026): line-clamp-2 — lister klipper efter
-              to linjer, detaljevisningen (kundekortet) viser alt. Rækken
-              kan åbnes via kundenavnet / row-linket. */}
-          <div className="text-base text-[var(--fg)] whitespace-pre-wrap line-clamp-2">
-            {label}
-          </div>
-          {typeLabel && (
-            <div className="mt-1 text-[13px] font-normal text-[var(--fg-3)]">
-              {typeLabel}
-            </div>
-          )}
-        </div>
-        {due && (
-          <span
-            className={`shrink-0 text-[13px] font-medium tabular-nums ${dueClass}`}
-          >
-            {due.text}
-          </span>
-        )}
-      </div>
-      {error && (
-        <div className="text-[13px] text-[var(--st-red-fg)]">{error}</div>
-      )}
-      <div className="flex items-center gap-2">
-        {/* Brief 85 §3 (28. sep 2026): Markér som klaret (primær, 48px,
-            uden flex-1). Åbn kunde (kun når kontakt findes). Send
-            videre / Udskyd i ⋯. */}
-        <Button
-          onClick={() => {
-            if (!confirming) {
-              setConfirming(true);
-              window.setTimeout(() => setConfirming(false), 3000);
-              return;
-            }
-            onMarkDone();
-          }}
-          disabled={pending}
-          className="min-h-12 gap-1.5 bg-[var(--ink)] font-medium text-white hover:bg-[var(--ink)]/90"
+    <>
+      <LagoButton
+        variant="primary"
+        primaryHeight={false}
+        onClick={onMarkDone}
+        disabled={markDonePending}
+      >
+        {markDonePending ? "Markerer …" : "Klaret"}
+      </LagoButton>
+      <LagoButton variant="secondary" onClick={() => setUdskudOpen(true)}>
+        Udskyd
+      </LagoButton>
+      {onHandoff && (
+        <LagoButton
+          variant="secondary"
+          onClick={onHandoff}
+          disabled={handoffPending}
         >
-          {pending
-            ? "Markerer …"
-            : confirming
-              ? "Klik igen for at bekræfte"
-              : "Markér som klaret"}
-        </Button>
-        {task.contact_id && (
-          <Button
-            asChild
-            variant="ghost"
-            className="min-h-11 shrink-0 bg-[var(--surface-3)] font-medium text-[var(--fg)] hover:bg-[var(--surface-3)]/80"
-          >
-            <Link to={`/contacts/${task.contact_id}/show`}>Åbn kunde</Link>
-          </Button>
-        )}
-        {/* Brief 87 §5 (28. sep 2026): på ≥1024 px (lg) står de to sidste
-            valg som ikonknapper — Udskyd (ClockArrowDown) og Send videre
-            (Send/papirflyver) — så pladsen bruges frem for at gemme dem
-            bag "…". Under lg beholdes menuen, iPhone og iPad har for lidt
-            plads til to knapper i træk. IconButton har 44 px trykmål og
-            påkrævet aria-label; Icon er eneste indgang til Lucide.
-            Brief 87 §5-hastesag (28. sep 2026 aften): Send videre åbner
-            nu bekræftelse på alle bredder — både ikon og menu. Task 23
-            (Ring til Paw / Rombo.dk) blev rullet tilbage manuelt fordi
-            ikonknappen fyrede uden at spørge. */}
-        <div className="hidden lg:flex items-center gap-2">
-          <IconButton
-            icon={ClockArrowDown}
-            aria-label="Udskyd med begrundelse"
-            title="Udskyd med begrundelse"
-            onClick={() => setUdskudOpen(true)}
-          />
-          {onHandoff && (
-            <IconButton
-              icon={Send}
-              aria-label="Send videre til kontoret"
-              title="Send videre til kontoret"
-              onClick={() => setHandoffOpen(true)}
-              disabled={handoffPending}
-            />
-          )}
-        </div>
-        <div className="lg:hidden">
-          <RowActionsMenu
-            // Brief 76 tillæg A (23. sep 2026): Udskyd er koblet — åbner
-            // UdskudTaskDialog der flytter due_date + logger begrundelsen
-            // i task_events_lago (IKKE i tasks.text, som send-videre gør
-            // som kendt skrøbelighed).
-            // Brief 76 §3: Send videre til kontoret nulstiller sales_id
-            // og appender note på tasks.text; migreres til task_events_lago
-            // i en separat runde.
-            // Brief 87 §5-hastesag: menu-varianten åbner også bekræftelses-
-            // dialog — samme regel som ikon-varianten, samme knapper.
-            actions={[
-              {
-                label: "Udskyd med begrundelse",
-                onSelect: () => setUdskudOpen(true),
-              },
-              ...(onHandoff
-                ? [
-                    {
-                      label: "Send videre til kontoret",
-                      onSelect: () => setHandoffOpen(true),
-                    },
-                  ]
-                : []),
-            ]}
-          />
-        </div>
-      </div>
+          {handoffPending ? "Sender …" : "Send videre"}
+        </LagoButton>
+      )}
       <UdskudTaskDialog
         open={udskudOpen}
         onOpenChange={setUdskudOpen}
-        taskId={task.id}
-        taskLabel={label}
-        currentDueDate={task.due_date}
+        taskId={taskId}
+        taskLabel={taskText?.trim() || "Opgave"}
+        currentDueDate={taskDueDate}
       />
-      {onHandoff && (
-        <SendVidereDialog
-          open={handoffOpen}
-          onOpenChange={setHandoffOpen}
-          taskText={label}
-          companyName={task.company_name}
-          isCovering={isCovering}
-          coveredName={coveredName}
-          pending={handoffPending}
-          onConfirm={() => {
-            setHandoffOpen(false);
-            onHandoff();
-          }}
-        />
-      )}
-    </article>
+    </>
   );
 }
