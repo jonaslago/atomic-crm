@@ -107,17 +107,30 @@ export async function fetchAktivitetsside(
   const supabase = getSupabaseClient();
   const today = todayIso();
 
-  // 1) customer_activities_lago inden for perioden.
+  // 1a) Completed activities within the period window.
   const activityRes = await supabase
     .from("customer_activities_lago")
     .select(
       "id, company_id, activity_date, activity_type_code, activity_type, description, done, sales_id, sales_name, companies!inner(name)",
     )
     .is("deleted_at", null)
+    .eq("done", true)
     .gte("activity_date", input.fromIso)
     .lte("activity_date", input.toIso)
     .order("activity_date", { ascending: false });
   if (activityRes.error) throw activityRes.error;
+
+  // 1b) §24: open (done=false) activities — fetched WITHOUT date filter
+  // so overdue plans (activity_date < fromIso) are always visible.
+  // Same pattern as openTasksRes (§10c).
+  const openActivitiesRes = await supabase
+    .from("customer_activities_lago")
+    .select(
+      "id, company_id, activity_date, activity_type_code, activity_type, description, done, sales_id, sales_name, companies!inner(name)",
+    )
+    .is("deleted_at", null)
+    .eq("done", false);
+  if (openActivitiesRes.error) throw openActivitiesRes.error;
 
   // 2) Planlagte besøg via companies_lago.next_visit_planned. Én pr.
   //    kunde. Vi henter kun dem hvor datoen falder inden for perioden.
@@ -157,7 +170,10 @@ export async function fetchAktivitetsside(
   // Slå sælgernavne op i én batch. Bruger sales-tabellen så
   // Backoffice-tildelinger (sales_id NULL) også kan mærkes klart.
   const salesIds = new Set<number>();
-  for (const a of activityRes.data ?? []) {
+  for (const a of [
+    ...(activityRes.data ?? []),
+    ...(openActivitiesRes.data ?? []),
+  ]) {
     if ((a as { sales_id: number | null }).sales_id != null)
       salesIds.add((a as { sales_id: number }).sales_id);
   }
@@ -229,6 +245,51 @@ export async function fetchAktivitetsside(
       ownerSalesId: a.sales_id,
       text: a.description ?? "",
       isPast,
+    });
+  }
+
+  // §24: open activities (done=false) — overdue plans and future plans.
+  // Future plans beyond toIso are filtered out. Overdue (before fromIso)
+  // are always shown with outsideWindow=true — same as §10c for tasks.
+  for (const a of (openActivitiesRes.data ?? []) as Array<{
+    id: number;
+    company_id: number;
+    activity_date: string;
+    activity_type_code: number | null;
+    activity_type: string | null;
+    description: string | null;
+    done: boolean;
+    sales_id: number | null;
+    sales_name: string | null;
+    companies: { name: string } | Array<{ name: string }>;
+  }>) {
+    const shortDate = a.activity_date.slice(0, 10);
+    if (shortDate > input.toIso) continue; // future beyond window
+    const co = Array.isArray(a.companies) ? a.companies[0] : a.companies;
+    const ownerName =
+      (a.sales_id != null ? salesNames.get(a.sales_id) : null) ??
+      a.sales_name ??
+      null;
+    const typeLabel =
+      (a.activity_type_code != null &&
+        ACTIVITY_TYPE_LABEL[a.activity_type_code]) ||
+      a.activity_type ||
+      "Aktivitet";
+    rows.push({
+      key: `activity-${a.id}`,
+      kind: "activity",
+      dateIso: a.activity_date,
+      dateLabel: formatDateLabel(a.activity_date),
+      timeLabel: null,
+      typeLabel,
+      typeCode: a.activity_type_code,
+      companyId: a.company_id,
+      companyName: co?.name ?? "—",
+      ownerName,
+      ownerSalesId: a.sales_id,
+      text: a.description ?? "",
+      isPast: false,
+      outsideWindow: shortDate < input.fromIso,
     });
   }
 

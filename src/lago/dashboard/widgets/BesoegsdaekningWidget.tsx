@@ -36,6 +36,7 @@ interface CoverageRow {
   ajour: number;
   traenger: number;
   overskredet: number;
+  uden_besoegspligt: number;
   i_alt: number;
 }
 
@@ -59,9 +60,10 @@ export function BesoegsdaekningWidget() {
       ajour: acc.ajour + r.ajour,
       traenger: acc.traenger + r.traenger,
       overskredet: acc.overskredet + r.overskredet,
+      uden_besoegspligt: acc.uden_besoegspligt + r.uden_besoegspligt,
       i_alt: acc.i_alt + r.i_alt,
     }),
-    { ajour: 0, traenger: 0, overskredet: 0, i_alt: 0 },
+    { ajour: 0, traenger: 0, overskredet: 0, uden_besoegspligt: 0, i_alt: 0 },
   );
 
   return (
@@ -83,6 +85,9 @@ export function BesoegsdaekningWidget() {
                 Trænger snart
               </th>
               <th className="pb-2 pr-3 text-right font-medium">Overskredet</th>
+              <th className="pb-2 pr-3 text-right font-medium">
+                Uden besøgspligt
+              </th>
               <th className="pb-2 text-right font-medium">I alt</th>
             </tr>
           </thead>
@@ -106,6 +111,9 @@ export function BesoegsdaekningWidget() {
                 >
                   {r.overskredet}
                 </td>
+                <td className="py-2 pr-3 text-right tabular-nums text-[var(--fg-2)]">
+                  {r.uden_besoegspligt}
+                </td>
                 <td className="py-2 text-right tabular-nums text-[var(--fg)]">
                   {r.i_alt}
                 </td>
@@ -128,6 +136,9 @@ export function BesoegsdaekningWidget() {
                 }
               >
                 {totals.overskredet}
+              </td>
+              <td className="py-2 pr-3 text-right tabular-nums text-[var(--fg-2)]">
+                {totals.uden_besoegspligt}
               </td>
               <td className="py-2 text-right tabular-nums text-[var(--fg)]">
                 {totals.i_alt}

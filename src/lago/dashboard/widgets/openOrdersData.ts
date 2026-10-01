@@ -19,6 +19,7 @@ export interface EffectiveLine {
   har_oensket_dato: boolean | null;
   er_par_komponent: boolean | null;
   antal: number | null;
+  produktnr: string | null;
 }
 
 const PAGE_SIZE = 1000;
@@ -32,7 +33,7 @@ export async function fetchAllEffectiveLines(): Promise<EffectiveLine[]> {
     const { data, error } = await supabase
       .from("open_orders_effective_lago")
       .select(
-        "ordre_nr, ordre_dato, ej_faktureret, status, lagerstatus_effective, levering, mav, har_oensket_dato, er_par_komponent, antal",
+        "ordre_nr, ordre_dato, ej_faktureret, status, lagerstatus_effective, levering, mav, har_oensket_dato, er_par_komponent, antal, produktnr",
       )
       .range(from, from + PAGE_SIZE - 1);
     if (error) throw error;

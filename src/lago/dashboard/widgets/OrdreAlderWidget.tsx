@@ -5,11 +5,17 @@ import { WidgetShell } from "../WidgetShell";
 import { fetchAllEffectiveLines } from "./openOrdersData";
 
 /**
- * §97-3 (1. okt 2026): Aldersfordeling — åbne ordrer.
+ * §97-3 rev. (1. okt 2026): Aldersfordeling — åbne ordrer.
  *
- * Kolonner: 0–7d, 8–14, 15–30, 31–60, 60+, Reservation, Total.
- * Ekskl. En Primeur (status=21) — samme som OSR-rapporten.
+ * Kolonner: 0–7d, 8–14, 15–30, 31–60, 60+, Total, Reservation, EP.
  * Alder = current_date − ordre_dato.
+ *
+ * Same population as OrdreBunkerWidget:
+ *   - Gebyrlinjer (Vej, Energi) excluded
+ *   - Par-komponenter excluded
+ *   - Reservation shown separately, NOT in total
+ *   - En Primeur shown separately (0 kr. + antal stk.)
+ *   - Total = age buckets only (not reservation, not EP)
  */
 
 function ageDays(ordreDato: string): number {
@@ -19,15 +25,12 @@ function ageDays(ordreDato: string): number {
   return Math.floor((now.getTime() - d.getTime()) / 86_400_000);
 }
 
-interface AgeBucket {
-  label: string;
-  belob: number;
-}
-
 const krFmt = new Intl.NumberFormat("da-DK", {
   style: "decimal",
   maximumFractionDigits: 0,
 });
+
+const GEBYR = new Set(["Vej", "Energi"]);
 
 export function OrdreAlderWidget() {
   const query = useQuery({
@@ -41,14 +44,22 @@ export function OrdreAlderWidget() {
     if (lines.length === 0) return null;
     const ages = [0, 0, 0, 0, 0]; // 0-7, 8-14, 15-30, 31-60, 60+
     let reservation = 0;
+    let epBelob = 0;
+    let epAntal = 0;
 
     for (const line of lines) {
       if (line.er_par_komponent) continue;
-      const statusCode = line.status?.split(" ")[0] ?? null;
-      if (statusCode === "21") continue;
+      if (GEBYR.has(line.produktnr ?? "")) continue;
 
+      const statusCode = line.status?.split(" ")[0] ?? null;
       const leveringCode = line.levering?.split(" ")[0] ?? null;
       const belob = line.ej_faktureret ?? 0;
+
+      if (statusCode === "21") {
+        epBelob += belob;
+        epAntal += line.antal ?? 0;
+        continue;
+      }
 
       if (leveringCode === "5") {
         reservation += belob;
@@ -63,7 +74,7 @@ export function OrdreAlderWidget() {
       else ages[4] += belob;
     }
 
-    const buckets: AgeBucket[] = [
+    const buckets = [
       { label: "0–7 dage", belob: ages[0] },
       { label: "8–14 dage", belob: ages[1] },
       { label: "15–30 dage", belob: ages[2] },
@@ -71,15 +82,16 @@ export function OrdreAlderWidget() {
       { label: "60+ dage", belob: ages[4] },
     ];
 
-    const total = ages[0] + ages[1] + ages[2] + ages[3] + ages[4] + reservation;
+    // Total = age buckets only. Reservation and EP are separate.
+    const total = ages[0] + ages[1] + ages[2] + ages[3] + ages[4];
 
-    return { buckets, reservation, total };
+    return { buckets, reservation, total, epBelob, epAntal };
   }, [query.data]);
 
   return (
     <WidgetShell
       title="Aldersfordeling — åbne ordrer"
-      subtitle="Ekskl. En Primeur · alder fra ordredato"
+      subtitle="Alder fra ordredato"
       isLoading={query.isPending}
       error={query.error as Error | null}
       isEmpty={!result}
@@ -98,10 +110,11 @@ export function OrdreAlderWidget() {
                     {b.label}
                   </th>
                 ))}
+                <th className="pb-2 pr-3 text-right font-bold">Total</th>
                 <th className="pb-2 pr-3 text-right font-medium">
                   Reservation
                 </th>
-                <th className="pb-2 text-right font-bold">Total</th>
+                <th className="pb-2 text-right font-medium">En Primeur</th>
               </tr>
             </thead>
             <tbody>
@@ -114,11 +127,19 @@ export function OrdreAlderWidget() {
                     {krFmt.format(b.belob)} kr.
                   </td>
                 ))}
-                <td className="py-2 pr-3 text-right tabular-nums text-[var(--fg)]">
+                <td className="py-2 pr-3 text-right tabular-nums font-bold text-[var(--fg)]">
+                  {krFmt.format(result.total)} kr.
+                </td>
+                <td className="py-2 pr-3 text-right tabular-nums text-[var(--fg-2)]">
                   {krFmt.format(result.reservation)} kr.
                 </td>
-                <td className="py-2 text-right tabular-nums font-bold text-[var(--fg)]">
-                  {krFmt.format(result.total)} kr.
+                <td className="py-2 text-right tabular-nums text-[var(--fg-2)]">
+                  {krFmt.format(result.epBelob)} kr.
+                  {result.epAntal > 0 && (
+                    <span className="ml-1 text-[var(--fg-3)]">
+                      ({krFmt.format(result.epAntal)} stk.)
+                    </span>
+                  )}
                 </td>
               </tr>
             </tbody>

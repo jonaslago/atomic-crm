@@ -181,7 +181,8 @@ export function useRegisterBesoeg() {
         .is("deleted_at", null)
         .gt("activity_date", new Date().toISOString().slice(0, 10));
 
-      // §24 bridge: also clear the column for existing readers
+      // §24 temporary dual-write (until week 42 reader migration):
+      // facit is frozen in next_visit_facit_20261001.
       await supabase
         .from("companies_lago")
         .update({
@@ -863,7 +864,8 @@ export function usePlanNextVisit() {
           .is("deleted_at", null)
           .gt("activity_date", new Date().toISOString().slice(0, 10));
         if (error) throw error;
-        // §24 bridge: also clear the column
+        // §24 temporary dual-write (until week 42 reader migration):
+        // facit is frozen in next_visit_facit_20261001.
         await supabase
           .from("companies_lago")
           .update({
@@ -899,10 +901,8 @@ export function usePlanNextVisit() {
       });
       if (error) throw error;
 
-      // §24 bridge: also write the column so existing readers (MinDag,
-      // kundeliste icon, aktivitetssiden) keep working until they are
-      // migrated to v_next_planned_visit_lago. Column is NOT dropped —
-      // this is intentional dual-write during the transition.
+      // §24 temporary dual-write (until week 42 reader migration):
+      // facit is frozen in next_visit_facit_20261001.
       const time =
         input.timeHm && /^\d{2}:\d{2}$/.test(input.timeHm)
           ? input.timeHm

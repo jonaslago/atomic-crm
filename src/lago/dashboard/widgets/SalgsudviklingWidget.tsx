@@ -27,6 +27,7 @@ interface DistrictRow {
   aatd_sidste_aar: string | number;
   aatd_vaekst_kr: string | number;
   aatd_vaekst_pct: string | number | null;
+  aatd_anchor: string | null;
 }
 
 async function fetchSalgsudvikling(): Promise<DistrictRow[]> {
@@ -34,7 +35,7 @@ async function fetchSalgsudvikling(): Promise<DistrictRow[]> {
   const { data, error } = await supabase
     .from("v_sales_district_periods")
     .select(
-      "distrikt, kundetype, grouping_id, aatd, aatd_sidste_aar, aatd_vaekst_kr, aatd_vaekst_pct",
+      "distrikt, kundetype, grouping_id, aatd, aatd_sidste_aar, aatd_vaekst_kr, aatd_vaekst_pct, aatd_anchor",
     )
     .in("grouping_id", [1, 3]);
   if (error) throw error;
@@ -87,17 +88,34 @@ export function SalgsudviklingWidget() {
   const districts = rows
     .filter((r) => r.grouping_id === 1 && r.distrikt !== null)
     .sort((a, b) => {
-      const ai = DISTRICT_ORDER.indexOf(a.distrikt as (typeof DISTRICT_ORDER)[number]);
-      const bi = DISTRICT_ORDER.indexOf(b.distrikt as (typeof DISTRICT_ORDER)[number]);
+      const ai = DISTRICT_ORDER.indexOf(
+        a.distrikt as (typeof DISTRICT_ORDER)[number],
+      );
+      const bi = DISTRICT_ORDER.indexOf(
+        b.distrikt as (typeof DISTRICT_ORDER)[number],
+      );
       const aIndex = ai === -1 ? 999 : ai;
       const bIndex = bi === -1 ? 999 : bi;
       return aIndex - bIndex;
     });
 
+  // §101-1: show the anchor date so nobody doubts what is compared
+  const anchorIso = total?.aatd_anchor ?? null;
+  const anchorLabel = anchorIso
+    ? new Intl.DateTimeFormat("da-DK", {
+        day: "numeric",
+        month: "short",
+        year: "numeric",
+      }).format(new Date(anchorIso + "T12:00:00"))
+    : null;
+  const subtitle = anchorLabel
+    ? `År til dato pr. ${anchorLabel}, mod samme dato sidste år`
+    : "År til dato mod sidste år · pr. distrikt";
+
   return (
     <WidgetShell
       title="Salgsudvikling"
-      subtitle="År til dato mod sidste år · pr. distrikt"
+      subtitle={subtitle}
       isLoading={query.isPending}
       error={query.error as Error | null}
       isEmpty={!total && districts.length === 0}
@@ -141,10 +159,7 @@ export function SalgsudviklingWidget() {
               </tr>
             )}
             {districts.map((r) => (
-              <tr
-                key={r.distrikt}
-                className="border-t border-[var(--line)]"
-              >
+              <tr key={r.distrikt} className="border-t border-[var(--line)]">
                 <td className="py-2 pr-3 text-[var(--fg)]">{r.distrikt}</td>
                 <td className="py-2 pr-3 text-right tabular-nums text-[var(--fg)]">
                   {kroneFmt.format(toNum(r.aatd))}
