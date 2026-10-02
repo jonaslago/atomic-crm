@@ -27,6 +27,7 @@ import {
   StamdataSection,
 } from "./show/LagoCustomerCard";
 import { FaktureretSection } from "./show/FaktureretSection";
+import { CustomerLogSection } from "./show/CustomerLogSection";
 
 /**
  * Brief 50 §2 (17. sep 2026) · mobil-header slået sammen til ét bånd.
@@ -274,6 +275,7 @@ function LandscapeZones({ data }: ZoneProps) {
             vismaCustomerNo={data.extension?.visma_customer_no ?? null}
             layout="laptop"
           />
+          <CustomerLogSection companyId={data.company.id} layout="laptop" />
         </main>
         <aside className="flex flex-col">
           <OmsaetningSection extension={data.extension} layout="laptop" />

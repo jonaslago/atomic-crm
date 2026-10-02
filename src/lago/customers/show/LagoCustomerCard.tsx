@@ -11,6 +11,7 @@ import { getSupabaseClient } from "@/components/atomic-crm/providers/supabase/su
 import { CompactTaskRow } from "@/lago/dashboard/widgets/CompactTaskRow";
 import { SuggestCeasedDialog } from "@/lago/customers/SuggestCeasedDialog";
 import { FaktureretSection } from "./FaktureretSection";
+import { CustomerLogSection } from "./CustomerLogSection";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -150,6 +151,7 @@ export function LagoCustomerCard({ data }: { data: LagoCustomerData }) {
         vismaCustomerNo={data.extension?.visma_customer_no ?? null}
       />
       <StamdataSection data={data} />
+      <CustomerLogSection companyId={data.company.id} />
     </div>
   );
 }
