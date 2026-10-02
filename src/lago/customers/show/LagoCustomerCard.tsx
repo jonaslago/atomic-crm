@@ -293,9 +293,24 @@ export function HvadSketeDerSidstSection({
   // i-place når man vil se hele historikken.
   const [expanded, setExpanded] = useState(false);
 
+  // §94-6: last_event_at — derived from activities, not a column
+  const lastEventAt = useMemo(() => {
+    const events = (data.activities ?? []).filter(
+      (a) => a.done && a.activity_type_code === 10 && !a.deleted_at,
+    );
+    if (events.length === 0) return null;
+    return events.reduce(
+      (max, a) => (a.activity_date > max ? a.activity_date : max),
+      events[0].activity_date,
+    );
+  }, [data.activities]);
+
+  const lastVisitLabel = data.extension?.last_visit_at
+    ? `Sidste besøg ${dateShort(data.extension.last_visit_at)}`
+    : null;
+  const lastEventLabel = lastEventAt ? `Event ${dateShort(lastEventAt)}` : null;
+
   const rows = useMemo(() => {
-    // Brief 45 §3: kun HISTORIK. Planlagte aktiviteter (isPlanned)
-    // hører i "Åbne opgaver" nedenfor — et løfte er ikke et spor.
     const activityRows = (data.activities ?? [])
       .filter((a) => a.done === true)
       .map((a) => ({
@@ -357,18 +372,22 @@ export function HvadSketeDerSidstSection({
           variant="label"
           title="Aktivitetshistorik"
           subtitle={
-            rows.length > 0
+            [lastVisitLabel, lastEventLabel].filter(Boolean).join(" · ") ||
+            (rows.length > 0
               ? plural(rows.length, "aktivitet", "aktiviteter")
-              : undefined
+              : undefined)
           }
         />
       ) : (
         <SectionHeader
           title="Hvad skete der sidst"
           right={
-            rows.length > 0 && (
-              <Meta>{plural(rows.length, "aktivitet", "aktiviteter")}</Meta>
-            )
+            <Meta>
+              {[lastVisitLabel, lastEventLabel].filter(Boolean).join(" · ") ||
+                (rows.length > 0
+                  ? plural(rows.length, "aktivitet", "aktiviteter")
+                  : null)}
+            </Meta>
           }
         />
       )}
