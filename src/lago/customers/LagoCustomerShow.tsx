@@ -272,6 +272,7 @@ function LandscapeZones({ data }: ZoneProps) {
           />
           <FaktureretSection
             vismaCustomerNo={data.extension?.visma_customer_no ?? null}
+            layout="laptop"
           />
         </main>
         <aside className="flex flex-col">
