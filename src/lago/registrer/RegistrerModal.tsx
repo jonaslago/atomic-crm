@@ -45,6 +45,7 @@ import type { AktivtForslag } from "@/lago/ai/ForslagKort";
 import { useViewSalesId } from "@/lago/portefolje/PortefoljeContext";
 import { useActorSalesId } from "@/lago/portefolje/useActorSalesId";
 import { fetchCustomerList } from "@/lago/customers/dataAccess";
+import { SuggestCeasedDialog } from "@/lago/customers/SuggestCeasedDialog";
 import type { SelectedCompany } from "@/lago/dashboard/DashboardKundePicker";
 import { useVisitIntervals } from "@/lago/settings/useVisitIntervals";
 import { FollowUpBuilder, type ManualFollowUp } from "./FollowUpBuilder";
@@ -838,7 +839,41 @@ function BesoegForm({
         </div>
       )}
       {error && <p className="text-destructive text-sm">{error}</p>}
+      {/* §93-4b: "Kunden er ophørt" — primary entry point from field */}
+      {companyId > 0 && (
+        <CeasedShortcut companyId={companyId} companyName={companyName} />
+      )}
     </FormShell>
+  );
+}
+
+/** §93-4b: inline shortcut inside BesoegForm */
+function CeasedShortcut({
+  companyId,
+  companyName,
+}: {
+  companyId: number;
+  companyName: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const actorSalesId = useActorSalesId();
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="mt-2 flex items-center gap-1.5 text-[length:var(--t-meta)] text-[var(--fg-3)] hover:text-[var(--st-red-fg)] hover:underline"
+      >
+        Kunden er ophørt?
+      </button>
+      <SuggestCeasedDialog
+        open={open}
+        onOpenChange={setOpen}
+        companyId={companyId}
+        companyName={companyName}
+        actorSalesId={actorSalesId}
+      />
+    </>
   );
 }
 
