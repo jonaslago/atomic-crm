@@ -98,7 +98,7 @@ const ACTIVITY_TYPE_LABEL: Record<number, string> = {
   2: "Kampagne",
   4: "Egen henvendelse",
   5: "Opkald",
-  10: "Smagning",
+  10: "Event",
   99: "Andet",
 };
 

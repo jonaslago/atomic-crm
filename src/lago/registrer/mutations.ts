@@ -497,6 +497,11 @@ export interface RegisterAktivitetInput extends CommonCtx {
   primaryContactId?: number | null;
   hasCustomerContacts?: boolean;
   contactsFetchFailed?: boolean;
+  // §94: event fields (only when activityTypeCode = 10)
+  title?: string | null;
+  attendees?: string | null;
+  eventStatus?: "planlagt" | "afholdt" | "aflyst" | null;
+  location?: string | null;
 }
 
 /**
@@ -530,17 +535,28 @@ export function useRegisterAktivitet() {
       // altid når vi kender den, ellers falder tilbage til identity.
       const salesId = input.performedBySalesId ?? readIdentitySalesId(identity);
       const planned = isPlannedDateIso(input.dateIso);
+      // §94: event_status overrides the date-based done logic.
+      // A future event is 'planlagt', a past event is 'afholdt'.
+      const isEvent = input.activityTypeCode === 10;
+      const eventStatus = isEvent
+        ? (input.eventStatus ?? (planned ? "planlagt" : "afholdt"))
+        : null;
+
       const res = await supabase.from("customer_activities_lago").insert({
-        company_id: input.companyId,
+        company_id: input.companyId || null, // §94-3: NULL for events without customer
         activity_date: input.dateIso,
         activity_type_code: input.activityTypeCode,
         activity_type: input.activityTypeLabel,
         description: input.description,
         sales_name: salesName,
         sales_id: salesId,
-        // Brief 35 §1: fremtidig dato → planlagt (done=false).
-        done: !planned,
+        done: isEvent ? eventStatus === "afholdt" : !planned,
         source: "crm_native",
+        // §94: event-specific fields
+        title: isEvent ? (input.title ?? null) : null,
+        attendees: isEvent ? (input.attendees ?? null) : null,
+        event_status: eventStatus,
+        location: isEvent ? (input.location ?? null) : null,
       });
       if (res.error) throw res.error;
 

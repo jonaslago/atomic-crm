@@ -482,7 +482,7 @@ export const danishLagoMessages = {
       },
       activity_types: {
         opkald: "Opkald",
-        smagning: "Smagning/Promotion",
+        event: "Event",
         kampagne: "Kampagne",
         egen_henvendelse: "Egen henvendelse",
         andet: "Andet",

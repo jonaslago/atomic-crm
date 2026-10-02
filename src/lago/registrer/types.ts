@@ -12,11 +12,15 @@ export interface ActivityTypeOption {
 // Besøg is its own code (1) and gets its own tab, so the "Aktivitet"-tab
 // only lists the non-besøg types.
 export const AKTIVITET_TYPES: readonly ActivityTypeOption[] = [
-  { code: 5, label: "Opkald", labelKey: "lago.registrer.activity_types.opkald" },
+  {
+    code: 5,
+    label: "Opkald",
+    labelKey: "lago.registrer.activity_types.opkald",
+  },
   {
     code: 10,
-    label: "Smagning/Promotion",
-    labelKey: "lago.registrer.activity_types.smagning",
+    label: "Event",
+    labelKey: "lago.registrer.activity_types.event",
   },
   {
     code: 2,

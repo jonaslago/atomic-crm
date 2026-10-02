@@ -59,7 +59,7 @@ const TYPE_OPTIONS: Array<{
   matches: (r: ActivityRow) => boolean;
 }> = [
   { code: "besoeg", label: "Besøg", matches: (r) => r.typeCode === 1 },
-  { code: "smagning", label: "Smagning", matches: (r) => r.typeCode === 10 },
+  { code: "event", label: "Event", matches: (r) => r.typeCode === 10 },
   { code: "opkald", label: "Opkald", matches: (r) => r.typeCode === 5 },
   { code: "kampagne", label: "Kampagne", matches: (r) => r.typeCode === 2 },
   { code: "opgave", label: "Opgave", matches: (r) => r.kind === "task" },

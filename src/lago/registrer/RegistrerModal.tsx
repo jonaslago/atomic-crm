@@ -868,6 +868,10 @@ function AktivitetForm({
   const [text, setText] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [manualFollowUps, setManualFollowUps] = useState<ManualFollowUp[]>([]);
+  // §94: event-specific fields (visible when typeCode = 10)
+  const [eventTitle, setEventTitle] = useState("");
+  const [eventAttendees, setEventAttendees] = useState("");
+  const [eventLocation, setEventLocation] = useState("");
   const mutation = useRegisterAktivitet();
   const createContact = useCreateInlineContact();
   const [newContactName, setNewContactName] = useState("");
@@ -908,6 +912,10 @@ function AktivitetForm({
         description: trimmed,
         performedByName: performer.selectedName,
         performedBySalesId: performer.selectedSalesId,
+        // §94: event fields
+        title: Number(typeCode) === 10 ? eventTitle || null : null,
+        attendees: Number(typeCode) === 10 ? eventAttendees || null : null,
+        location: Number(typeCode) === 10 ? eventLocation || null : null,
         // Brief 40 tillæg A: manuelle opfølgninger + kontakt-binding
         // med samme skelne-mellem-tilstande regel som besøgsmutation.
         manualFollowUps: manualFollowUps.map((m) => ({
@@ -993,6 +1001,47 @@ function AktivitetForm({
               _: "Registreres som afholdt",
             })}
       </p>
+      {/* §94: event-specific fields, visible when type = Event (10) */}
+      {Number(typeCode) === 10 && (
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div className="space-y-1.5">
+            <Label htmlFor="event-title" className="text-sm">
+              Titel
+            </Label>
+            <Input
+              id="event-title"
+              value={eventTitle}
+              onChange={(e) => setEventTitle(e.target.value)}
+              placeholder="Vinmesse, Roséfestival…"
+              className="min-h-11 w-full min-w-0"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="event-location" className="text-sm">
+              Sted
+            </Label>
+            <Input
+              id="event-location"
+              value={eventLocation}
+              onChange={(e) => setEventLocation(e.target.value)}
+              placeholder="Valgfri"
+              className="min-h-11 w-full min-w-0"
+            />
+          </div>
+          <div className="sm:col-span-2 space-y-1.5">
+            <Label htmlFor="event-attendees" className="text-sm">
+              Deltagere fra LAGO
+            </Label>
+            <Input
+              id="event-attendees"
+              value={eventAttendees}
+              onChange={(e) => setEventAttendees(e.target.value)}
+              placeholder="Peter, Simon…"
+              className="min-h-11 w-full min-w-0"
+            />
+          </div>
+        </div>
+      )}
       <div className="space-y-1.5">
         <Label htmlFor="akt-note" className="text-sm font-bold">
           {translate("lago.registrer.aktivitet.note_label")}
