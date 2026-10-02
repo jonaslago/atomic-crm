@@ -234,8 +234,8 @@ export function OpfoelgningerKontorWidget() {
 
   return (
     <WidgetShell
-      title="Åbne opgaver"
-      subtitle="Udestående opgaver — sendt fra sælgerne eller oprettet af kontoret"
+      title="Kontorets opgaver"
+      subtitle="Kontorets fælles kø — overskredne og inden for 7 dage"
       isLoading={query.isPending}
       error={query.error as Error | null}
       isEmpty={rows.length === 0}

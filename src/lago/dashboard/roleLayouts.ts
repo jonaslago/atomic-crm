@@ -47,9 +47,10 @@ export const ROLE_LAYOUTS: RoleLayout = {
   // kontoret, men ikke mig. Two widgets, same component, different query.
   // §98-1 (1. okt 2026): ordrekommentarer øverst, fremhævet.
   // Ringeliste-widget udgår (Simon: "den kan man selv finde under kunder").
+  // §98-1: ringeliste-tællerrækken udgår (Simon: "den kan man selv
+  // finde under kunder"). Filteret på kundelisten er uændret.
   kontor: [
     "ordrekommentarer",
-    "taellerraekke",
     "kan_sendes",
     "mine_opgaver",
     "opfoelgninger_kontor",
@@ -107,7 +108,6 @@ export const ROLE_LAYOUTS: RoleLayout = {
   // Forslag_rettelser er ude fra forsiden — hører på indstillinger.
   admin: [
     "ordrekommentarer",
-    "taellerraekke",
     "kan_sendes",
     "opfoelgninger_kontor",
     "seneste_registreringer",

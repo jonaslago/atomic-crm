@@ -86,9 +86,13 @@ export const WIDGETS: Record<string, WidgetDefinition> = {
   // Kunder med ordrer der kan sendes som andet widget efter Ordre-
   // kommentarer, og ny rækkefølge på resten. To-beholder-model i grid'et
   // løser 600 px ingenting-problemet (brief 82 §1).
-  taellerraekke: {
-    title: "Kontorets overblik",
-    subtitle: "Fire arbejdsbunker — klik for at åbne den, du starter med",
+  // §98-1: renamed from "taellerraekke" — the key should say what it
+  // contains (a ringeliste counter), not how it looks (a row of tiles).
+  // Removed from kontor + admin layouts. Kept in registry in case a
+  // future layout needs it.
+  ringeliste_taeller: {
+    title: "Ringelisten",
+    subtitle: "Kunder over 14 dage ud over intervallet — kontoret må ringe",
     width: "full",
     component: TaellerraekkeWidget,
   },

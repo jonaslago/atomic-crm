@@ -395,8 +395,8 @@ export function MineOpgaverWidget() {
 
   return (
     <WidgetShell
-      title="Åbne opgaver"
-      subtitle="Overskredne og opgaver med frist inden for 7 dage"
+      title="Mine opgaver"
+      subtitle="Overskredne, uden frist og opgaver inden for 7 dage"
       seeAllHref="/aktiviteter?period=kommende&types=opgave"
       seeAllLabel="Se alle åbne opgaver"
       headerExtra={nyOpgaveButton}
