@@ -296,7 +296,12 @@ export function HvadSketeDerSidstSection({
   // §94-6: last_event_at — derived from activities, not a column
   const lastEventAt = useMemo(() => {
     const events = (data.activities ?? []).filter(
-      (a) => a.done && a.activity_type_code === 10 && !a.deleted_at,
+      (a) =>
+        a.done &&
+        a.activity_type_code === 10 &&
+        !a.deleted_at &&
+        // §94-6: only afholdt, not aflyst
+        (a as { event_status?: string }).event_status === "afholdt",
     );
     if (events.length === 0) return null;
     return events.reduce(

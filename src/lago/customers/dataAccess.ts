@@ -66,7 +66,7 @@ export async function fetchLagoCustomer(
     supabase
       .from("customer_activities_lago")
       .select(
-        "id, company_id, activity_date, activity_type_code, activity_type, description, sales_name, sales_id, done, source",
+        "id, company_id, activity_date, activity_type_code, activity_type, description, sales_name, sales_id, done, source, event_status, title, attendees, location",
       )
       .eq("company_id", companyId)
       // Brief 16. sep 2026: skjul blødt slettede aktiviteter fra
@@ -206,10 +206,7 @@ export async function restoreNote(id: number): Promise<void> {
   if (error) throw error;
 }
 
-export async function updateNote(
-  id: number,
-  text: string,
-): Promise<void> {
+export async function updateNote(id: number, text: string): Promise<void> {
   const supabase = getSupabaseClient();
   const { error } = await supabase
     .from("company_notes_lago")
@@ -427,7 +424,7 @@ async function runCustomerListQuery(
 
   const { data, error, count } = await q;
   if (error) throw error;
-  const total = count ?? (data?.length ?? 0);
+  const total = count ?? data?.length ?? 0;
 
   const baseRows = (data ?? []).map((row: any) => {
     const rawExt = Array.isArray(row.extension)
@@ -510,7 +507,9 @@ async function runCustomerListQuery(
   if (companyIds.length > 0) {
     const priRes = await supabase
       .from("customers_with_priority_lago")
-      .select("company_id, status, days_overdue, interval_days, days_since_visit")
+      .select(
+        "company_id, status, days_overdue, interval_days, days_since_visit",
+      )
       .in("company_id", companyIds);
     if (priRes.error) throw priRes.error;
     for (const row of (priRes.data ?? []) as Array<{
