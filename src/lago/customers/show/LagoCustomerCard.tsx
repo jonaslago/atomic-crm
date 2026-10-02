@@ -7,6 +7,7 @@ import { AlertTriangle, MapPin, Pencil, Phone, Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useActorSalesId } from "@/lago/portefolje/useActorSalesId";
 import { SuggestCeasedDialog } from "@/lago/customers/SuggestCeasedDialog";
+import { FaktureretSection } from "./FaktureretSection";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -141,6 +142,9 @@ export function LagoCustomerCard({ data }: { data: LagoCustomerData }) {
         extension={data.extension}
         companyId={data.company.id}
         companyName={data.company.name}
+      />
+      <FaktureretSection
+        vismaCustomerNo={data.extension?.visma_customer_no ?? null}
       />
       <StamdataSection data={data} />
     </div>
