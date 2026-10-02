@@ -1,11 +1,14 @@
 import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import { useGetIdentity, useTranslate } from "ra-core";
 import { Link } from "react-router-dom";
 import { AlertTriangle, MapPin, Pencil, Phone, Plus } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { useActorSalesId } from "@/lago/portefolje/useActorSalesId";
+import { getSupabaseClient } from "@/components/atomic-crm/providers/supabase/supabase";
+import { CompactTaskRow } from "@/lago/dashboard/widgets/CompactTaskRow";
 import { SuggestCeasedDialog } from "@/lago/customers/SuggestCeasedDialog";
 import { FaktureretSection } from "./FaktureretSection";
 import { Button } from "@/components/ui/button";
@@ -624,27 +627,48 @@ export function HvadSketeDerSidstSection({
 
 export function AabneOpfoelgningerSection({
   tasks,
-  contacts,
   layout = "mobile",
 }: {
   tasks: OpenTask[];
-  contacts: ContactSummary[];
+  contacts?: ContactSummary[];
   layout?: SectionLayout;
 }) {
   const isLaptop = layout === "laptop";
-  const { taskTypes } = useConfigurationContext();
   const sellers = useSellerLookup();
-  // Brief 45 §3: gul StatusBadge når der er nogen. Neutral ellers.
   const count = tasks.length;
-  // Brief 52 tillæg A §3 (17. sep 2026): gult "N udestående" mærkat
-  // begge bredder — laptop sagde grå "N aktive", som ikke sagde
-  // hvad der skulle handles på. Ét sprog, én farve, begge steder.
   const badge =
     count > 0 ? (
       <StatusBadge variant="gul">{count} udestående</StatusBadge>
     ) : (
       <Meta>Ingen udestående</Meta>
     );
+
+  // §98-3d: mark-done mutation (same as MineOpgaverWidget)
+  const qc = useQueryClient();
+  const actorSalesId = useActorSalesId();
+  const markDone = useMutation({
+    mutationFn: async (taskId: number) => {
+      const supabase = getSupabaseClient();
+      const now = new Date().toISOString();
+      await supabase
+        .from("tasks")
+        .update({
+          done_date: now,
+          completed_by_sales_id: actorSalesId,
+        })
+        .eq("id", taskId);
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["lago-customer"] });
+      toast.success("Opgave klaret");
+    },
+    onError: () => toast.error("Kunne ikke markere opgaven"),
+  });
+
+  // §98-5a: confirmation state
+  const [confirmId, setConfirmId] = useState<number | null>(null);
+  const confirmTask = tasks.find((t) => t.id === confirmId);
+
   return (
     <Section variant={isLaptop ? "panel" : "divider"}>
       {isLaptop ? (
@@ -657,49 +681,67 @@ export function AabneOpfoelgningerSection({
           Alle løfter er indfriet. Godt gået.
         </p>
       ) : (
-        <RowGroup>
+        <div>
           {tasks.map((t) => {
-            const contact = contacts.find((c) => c.id === t.contact_id);
-            // Brief 48 §C (16. sep 2026): rækken viser ANSVARLIG frem
-            // for type. Hvem der skylder noget er vigtigere end hvordan
-            // det skal gøres — især når opgaver kan ligge i kontorets
-            // kø. Ukendt sales_id (kontor-opgaver o.l.) → "Kontoret".
-            // Type flyttes bag ⋯ som tooltip på rækken.
-            const typeLabel =
-              taskTypes.find((tt) => tt.value === t.type)?.label ??
-              t.type ??
-              null;
             const responsibleName = sellers.bySalesId(t.sales_id) ?? "Kontoret";
-            const overdue =
-              t.due_date != null &&
-              t.due_date < new Date().toISOString().slice(0, 10);
             return (
-              <li
+              <CompactTaskRow
                 key={t.id}
-                className="flex flex-col gap-1"
-                title={typeLabel ? `Type: ${typeLabel}` : undefined}
-              >
-                <p className="text-sm font-medium text-[var(--fg)]">{t.text}</p>
-                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[length:var(--t-sec)] text-[var(--fg-2)]">
-                  {t.due_date && (
-                    <span
-                      className={
-                        overdue
-                          ? "font-medium text-[var(--st-red-fg)]"
-                          : "text-[var(--st-amber-fg)]"
-                      }
-                    >
-                      Forfald: {dateShort(t.due_date)}
-                    </span>
-                  )}
-                  <span>Ansvarlig: {responsibleName}</span>
-                  {contact && <span>Kontakt: {contactName(contact)}</span>}
-                </div>
-              </li>
+                id={t.id}
+                text={t.text?.trim() || "Opgave uden tekst"}
+                companyName={null}
+                companyId={null}
+                dueDate={t.due_date}
+                origin={responsibleName}
+                hideCompany
+                actions={
+                  <LagoButton
+                    variant="primary"
+                    primaryHeight={false}
+                    onClick={() => setConfirmId(t.id)}
+                    disabled={markDone.isPending && markDone.variables === t.id}
+                  >
+                    {markDone.isPending && markDone.variables === t.id
+                      ? "Markerer …"
+                      : "Klaret"}
+                  </LagoButton>
+                }
+              />
             );
           })}
-        </RowGroup>
+        </div>
       )}
+      {/* §98-5a: confirmation dialog */}
+      <Dialog
+        open={confirmId != null}
+        onOpenChange={(v) => {
+          if (!v) setConfirmId(null);
+        }}
+      >
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Markér som klaret?</DialogTitle>
+            <DialogDescription>
+              {confirmTask?.text
+                ? `"${confirmTask.text.length > 80 ? confirmTask.text.slice(0, 80) + "…" : confirmTask.text}"`
+                : "Opgaven markeres som klaret og forsvinder fra listen."}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setConfirmId(null)}>
+              Annullér
+            </Button>
+            <Button
+              onClick={() => {
+                if (confirmId != null) markDone.mutate(confirmId);
+                setConfirmId(null);
+              }}
+            >
+              Ja, klaret
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Section>
   );
 }
