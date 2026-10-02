@@ -54,19 +54,22 @@ async function fetchBesoegPrPerson(): Promise<PersonRow[]> {
   const salesIds = sellers.map((s) => s.id);
 
   // §101-3: paginated to avoid silent truncation
+  // §24: fetch cancelled too; exclude cancelled rows entirely
   const activitiesResult = await paginatedFetch<{
     sales_id: number;
     activity_type_code: number | null;
     activity_date: string;
     done: boolean;
+    cancelled: boolean;
   }>({
     table: "customer_activities_lago",
-    select: "sales_id, activity_type_code, activity_date, done",
+    select: "sales_id, activity_type_code, activity_date, done, cancelled",
     filters: (q) =>
       q
         .in("sales_id", salesIds)
         .is("deleted_at", null)
         .eq("activity_type_code", 1)
+        .eq("cancelled", false)
         .gte("activity_date", weekStart),
   });
 
