@@ -1480,35 +1480,61 @@ function OrderRow({
         </p>
       )}
       {/* Kommentarer */}
-      {kommentarer.map((k) => (
-        <div
-          key={k.id}
-          className="ml-6 rounded-md border-l-2 border-[var(--st-green)] bg-[var(--surface-1)] px-3 py-2 text-[length:var(--t-sec)]"
-        >
-          <div className="flex items-baseline gap-2">
-            <span className="font-medium text-[var(--fg)]">
-              {HENSIGT_LABEL[k.hensigt]}
-            </span>
-            {k.aftaltDato && (
-              <span className="text-[var(--fg-2)]">
-                · {formatWeekdayDate(k.aftaltDato)}
-              </span>
+      {kommentarer.map((k) => {
+        const isClosed = k.status !== "afventer";
+        const borderColor = isClosed
+          ? "border-[var(--fg-3)]/30"
+          : "border-[var(--st-green)]";
+        return (
+          <div
+            key={k.id}
+            className={cn(
+              "ml-6 rounded-md border-l-2 bg-[var(--surface-1)] px-3 py-2 text-[length:var(--t-sec)]",
+              borderColor,
+              isClosed && "opacity-70",
             )}
-          </div>
-          {k.note && (
-            <div className="mt-0.5">
-              <ExpandableNote
-                text={k.note}
-                clampLines={4}
-                className="text-[var(--fg-2)]"
-              />
+          >
+            <div className="flex items-baseline gap-2">
+              <span className="font-medium text-[var(--fg)]">
+                {HENSIGT_LABEL[k.hensigt]}
+              </span>
+              {k.aftaltDato && (
+                <span className="text-[var(--fg-2)]">
+                  · {formatWeekdayDate(k.aftaltDato)}
+                </span>
+              )}
+              {isClosed && (
+                <span className="text-[12px] text-[var(--fg-3)]">
+                  ·{" "}
+                  {k.status === "udfoert"
+                    ? "Udført"
+                    : k.status === "afvist"
+                      ? "Afvist"
+                      : "Bortfaldet"}
+                </span>
+              )}
             </div>
-          )}
-          <p className="mt-0.5 text-[12px] text-[var(--fg-3)]">
-            {k.oprettetAfNavn ?? "(ukendt)"} · {dateShort(k.oprettet)}
-          </p>
-        </div>
-      ))}
+            {k.note && (
+              <div className="mt-0.5">
+                <ExpandableNote
+                  text={k.note}
+                  clampLines={4}
+                  className="text-[var(--fg-2)]"
+                />
+              </div>
+            )}
+            {/* §98-2a: show the office's response on closed comments */}
+            {isClosed && k.lukketGrund && (
+              <div className="mt-1 rounded border border-[var(--line)] bg-[var(--surface)] px-2 py-1 text-[12px] text-[var(--fg-2)]">
+                Kontoret: {k.lukketGrund}
+              </div>
+            )}
+            <p className="mt-0.5 text-[12px] text-[var(--fg-3)]">
+              {k.oprettetAfNavn ?? "(ukendt)"} · {dateShort(k.oprettet)}
+            </p>
+          </div>
+        );
+      })}
       {/* §39d: note block removed — notes interleaved in OrderLines. */}
       {open && hasLines && (
         <OrderLines

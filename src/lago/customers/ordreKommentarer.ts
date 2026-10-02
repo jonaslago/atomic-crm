@@ -90,10 +90,7 @@ interface SupabaseKommentarRow {
   lukket: string | null;
   lukket_af: number | null;
   lukket_grund: string | null;
-  companies?:
-    | { name: string | null }
-    | Array<{ name: string | null }>
-    | null;
+  companies?: { name: string | null } | Array<{ name: string | null }> | null;
   sales?:
     | { first_name: string | null; last_name: string | null }
     | Array<{ first_name: string | null; last_name: string | null }>
@@ -125,9 +122,9 @@ function mapRow(r: SupabaseKommentarRow): OrdreKommentar {
 }
 
 /**
- * Kommentarer på en specifik kundes åbne ordrer. Bruges af kundekortets
- * ordreliste. Filter på status=afventer så listen ikke drukner i
- * lukkede rækker over tid.
+ * §98-2a: all comments on a customer's orders — including closed ones.
+ * A salesperson opening the customer three weeks later should see what
+ * the office replied. Closed comments show the grund (reason).
  */
 export async function fetchOrdreKommentarerForCompany(
   companyId: number,
@@ -139,7 +136,8 @@ export async function fetchOrdreKommentarerForCompany(
       "id, company_id, ordre_nr, hensigt, aftalt_dato, note, oprettet_af, oprettet, status, lukket, lukket_af, lukket_grund, sales:sales!oprettet_af(first_name, last_name)",
     )
     .eq("company_id", companyId)
-    .eq("status", "afventer")
+    // Show all — afventer first, then closed (udfoert/afvist/bortfaldet)
+    .order("status", { ascending: true })
     .order("oprettet", { ascending: false });
   if (error) throw error;
   return ((data ?? []) as unknown as SupabaseKommentarRow[]).map(mapRow);
@@ -149,7 +147,9 @@ export async function fetchOrdreKommentarerForCompany(
  * Alle afventende kommentarer (kontor-widget). Sorteret så "Send nu"
  * står øverst — det er dem der haster.
  */
-export async function fetchAfventendeOrdreKommentarer(): Promise<OrdreKommentar[]> {
+export async function fetchAfventendeOrdreKommentarer(): Promise<
+  OrdreKommentar[]
+> {
   const supabase = getSupabaseClient();
   const { data, error } = await supabase
     .from("ordre_kommentar_lago")
