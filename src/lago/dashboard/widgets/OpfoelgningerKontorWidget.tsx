@@ -1,6 +1,16 @@
+import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { getSupabaseClient } from "@/components/atomic-crm/providers/supabase/supabase";
 import { useActorSalesId } from "@/lago/portefolje/useActorSalesId";
 import { useAuthUserId } from "@/lago/portefolje/useAuthUserId";
@@ -270,6 +280,7 @@ export function OpfoelgningerKontorWidget() {
                   <KontorTaskAction
                     onMarkDone={() => markDone.mutate(r.id)}
                     pending={markDone.isPending && markDone.variables === r.id}
+                    taskText={bodyText || r.type || null}
                   />
                 }
               />
@@ -284,18 +295,49 @@ export function OpfoelgningerKontorWidget() {
 function KontorTaskAction({
   onMarkDone,
   pending,
+  taskText,
 }: {
   onMarkDone: () => void;
   pending: boolean;
+  taskText?: string | null;
 }) {
+  // §98-5a: confirmation before marking done
+  const [confirmOpen, setConfirmOpen] = useState(false);
   return (
-    <LagoButton
-      variant="primary"
-      primaryHeight={false}
-      onClick={onMarkDone}
-      disabled={pending}
-    >
-      {pending ? "Markerer …" : "Klaret"}
-    </LagoButton>
+    <>
+      <LagoButton
+        variant="primary"
+        primaryHeight={false}
+        onClick={() => setConfirmOpen(true)}
+        disabled={pending}
+      >
+        {pending ? "Markerer …" : "Klaret"}
+      </LagoButton>
+      <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Markér som klaret?</DialogTitle>
+            <DialogDescription>
+              {taskText
+                ? `"${taskText.length > 80 ? taskText.slice(0, 80) + "…" : taskText}"`
+                : "Opgaven markeres som klaret og forsvinder fra listen."}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setConfirmOpen(false)}>
+              Annullér
+            </Button>
+            <Button
+              onClick={() => {
+                setConfirmOpen(false);
+                onMarkDone();
+              }}
+            >
+              Ja, klaret
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }

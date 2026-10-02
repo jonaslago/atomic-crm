@@ -5,6 +5,15 @@ import { Plus } from "lucide-react";
 import { useGetIdentity } from "ra-core";
 import { toast } from "sonner";
 
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { getSupabaseClient } from "@/components/atomic-crm/providers/supabase/supabase";
 import { useActorSalesId } from "@/lago/portefolje/useActorSalesId";
 import { useAuthUserId } from "@/lago/portefolje/useAuthUserId";
@@ -528,16 +537,43 @@ function TaskActions({
   handoffPending: boolean;
 }) {
   const [udskudOpen, setUdskudOpen] = useState(false);
+  // §98-5a: confirmation before marking done
+  const [confirmDone, setConfirmDone] = useState(false);
   return (
     <>
       <LagoButton
         variant="primary"
         primaryHeight={false}
-        onClick={onMarkDone}
+        onClick={() => setConfirmDone(true)}
         disabled={markDonePending}
       >
         {markDonePending ? "Markerer …" : "Klaret"}
       </LagoButton>
+      <Dialog open={confirmDone} onOpenChange={setConfirmDone}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Markér som klaret?</DialogTitle>
+            <DialogDescription>
+              {taskText
+                ? `"${taskText.length > 80 ? taskText.slice(0, 80) + "…" : taskText}"`
+                : "Opgaven markeres som klaret og forsvinder fra listen."}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setConfirmDone(false)}>
+              Annullér
+            </Button>
+            <Button
+              onClick={() => {
+                setConfirmDone(false);
+                onMarkDone();
+              }}
+            >
+              Ja, klaret
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       <LagoButton variant="secondary" onClick={() => setUdskudOpen(true)}>
         Udskyd
       </LagoButton>
