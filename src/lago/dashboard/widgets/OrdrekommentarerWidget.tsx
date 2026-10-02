@@ -27,6 +27,7 @@ import { RowGroup } from "@/lago/ui/RowGroup";
 import { StatusPill } from "@/lago/ui/StatusPill";
 import { readErrorMessage } from "@/lago/ui/errorMessage";
 
+import { OrdreDetaljeDialog } from "@/lago/customers/show/OrdreDetaljeDialog";
 import { WidgetShell } from "../WidgetShell";
 
 /**
@@ -185,9 +186,7 @@ export function OrdrekommentarerWidget() {
                       >
                         {k.companyName ?? `Kunde ${k.companyId}`}
                       </Link>
-                      <span className="text-[13px] text-[var(--fg-3)]">
-                        · Ordre #{k.ordreNr}
-                      </span>
+                      <OrdreNrLink ordreNr={k.ordreNr} />
                       <StatusPill variant={tone}>
                         {HENSIGT_LABEL[k.hensigt]}
                       </StatusPill>
@@ -292,5 +291,26 @@ export function OrdrekommentarerWidget() {
         </DialogContent>
       </Dialog>
     </WidgetShell>
+  );
+}
+
+/** §98-2b: clickable order number → modal with order details */
+function OrdreNrLink({ ordreNr }: { ordreNr: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="text-[13px] text-[var(--fg-3)] underline-offset-2 hover:text-[var(--fg)] hover:underline"
+      >
+        · Ordre #{ordreNr}
+      </button>
+      <OrdreDetaljeDialog
+        open={open}
+        onOpenChange={setOpen}
+        ordreNr={ordreNr}
+      />
+    </>
   );
 }
