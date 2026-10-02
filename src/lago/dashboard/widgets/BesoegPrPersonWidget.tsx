@@ -1,5 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 
+import { Link } from "react-router-dom";
+
 import { getSupabaseClient } from "@/components/atomic-crm/providers/supabase/supabase";
 import { paginatedFetch } from "@/lago/ui/paginatedFetch";
 import { thisIsoWeek, toIsoDate } from "@/lago/ui/periodRange";
@@ -172,33 +174,62 @@ export function BesoegPrPersonWidget() {
             {rows.map((r) => (
               <tr key={r.salesId} className="border-t border-[var(--line)]">
                 <td className="py-2 pr-3 text-[var(--fg)]">{r.name}</td>
-                <td className="py-2 pr-3 text-right tabular-nums text-[var(--fg)]">
-                  {r.visitedToday}
-                </td>
-                <td className="py-2 pr-3 text-right tabular-nums text-[var(--fg)]">
-                  {r.visitedThisWeek}
-                </td>
-                <td className="py-2 pr-3 text-right tabular-nums text-[var(--fg)]">
-                  {r.plannedThisWeek}
-                </td>
-                <td className="py-2 pr-3 text-right tabular-nums text-[var(--fg)]">
-                  {r.plannedLater}
-                </td>
-                <td
-                  className={
-                    "py-2 text-right tabular-nums " +
-                    (r.overdue > 0
-                      ? "text-[var(--st-red-fg)]"
-                      : "text-[var(--fg)]")
-                  }
-                >
-                  {r.overdue}
-                </td>
+                <CellLink
+                  n={r.visitedToday}
+                  href={`/aktiviteter?person=${r.salesId}&types=besoeg&period=week`}
+                />
+                <CellLink
+                  n={r.visitedThisWeek}
+                  href={`/aktiviteter?person=${r.salesId}&types=besoeg&period=week`}
+                />
+                <CellLink
+                  n={r.plannedThisWeek}
+                  href={`/aktiviteter?person=${r.salesId}&types=besoeg&period=kommende`}
+                />
+                <CellLink
+                  n={r.plannedLater}
+                  href={`/aktiviteter?person=${r.salesId}&types=besoeg&period=kommende`}
+                />
+                <CellLink
+                  n={r.overdue}
+                  href={`/aktiviteter?person=${r.salesId}&types=besoeg&period=all`}
+                  red={r.overdue > 0}
+                />
               </tr>
             ))}
           </tbody>
         </table>
       </div>
     </WidgetShell>
+  );
+}
+
+/** §98 punkt 3: clickable number → activity page with filters */
+function CellLink({
+  n,
+  href,
+  red,
+}: {
+  n: number;
+  href: string;
+  red?: boolean;
+}) {
+  if (n === 0) {
+    return (
+      <td className="py-2 pr-3 text-right tabular-nums text-[var(--fg)]">0</td>
+    );
+  }
+  return (
+    <td className="py-2 pr-3 text-right tabular-nums">
+      <Link
+        to={href}
+        className={
+          "underline-offset-2 hover:underline " +
+          (red ? "text-[var(--st-red-fg)]" : "text-[var(--fg)]")
+        }
+      >
+        {n}
+      </Link>
+    </td>
   );
 }

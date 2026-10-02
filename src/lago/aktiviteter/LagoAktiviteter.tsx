@@ -270,7 +270,7 @@ export function LagoAktiviteter() {
             Aktiviteter
           </h1>
           <p className="mt-1 text-[13px] text-[var(--fg-2)]">
-            Foran os og bag os — planlagte aftaler, smagninger, opgaver og
+            Foran os og bag os — planlagte besøg, events, opgaver og
             registreringer.
           </p>
         </header>
@@ -426,7 +426,7 @@ export function LagoAktiviteter() {
               )}
               <ActivitySection
                 title={`Foran os (${foranOs.length + foranOsOverskredet.length})`}
-                subtitle="Planlagte aftaler, smagninger og opgaver — det nærmeste først"
+                subtitle="Planlagte besøg, events og opgaver — det nærmeste først"
                 rows={foranOs}
                 emptyText="Ingen planlagte aftaler i perioden."
               />

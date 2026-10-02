@@ -152,7 +152,9 @@ export async function fetchAktivitetsside(
   }>({
     table: "customer_activities_lago",
     select: ACTIVITY_SELECT,
-    filters: (q) => q.is("deleted_at", null).eq("done", false),
+    // §24: cancelled activities are neither upcoming nor overdue
+    filters: (q) =>
+      q.is("deleted_at", null).eq("done", false).eq("cancelled", false),
   });
 
   // 2) Planlagte besøg via companies_lago.next_visit_planned. Én pr.
