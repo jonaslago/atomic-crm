@@ -1,4 +1,5 @@
-import { Send } from "lucide-react";
+import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -9,105 +10,151 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Label } from "@/components/ui/label";
 
-import { Icon } from "@/lago/ui/Icon";
+import { getSupabaseClient } from "@/components/atomic-crm/providers/supabase/supabase";
 
 /**
- * Bekræftelse på "Send videre til kontoret" (brief 87 §5-hastesag,
- * 28. sep 2026).
+ * §98-5d (2. okt 2026): "Send videre" — choose a queue or a person.
  *
- * Hændelsen: Jonas sendte ved et uheld task 23 (Ring til Paw / Rombo.dk)
- * til kontoret via den nye ikonknap. Før i dag lå Send videre bag ⋯-
- * menuen, hvor sælgeren skulle læse tekst før tryk — vi fjernede
- * friktionen uden at erstatte den. Rulle-tilbagen blev logget som
- * `genaabnet` i task_events_lago.
- *
- * Bekræftelsen NAVNGIVER hvad der sendes:
- *   - opgavens tekst (line-clamp så en lang note ikke sprænger dialogen)
- *   - kundens navn
- *   - under dækning: "Dette er {navn}s opgave." — så coveren ved at
- *     handlingen ændrer en andens flade
- *
- * Knapper: "Send til kontoret" (primær) og "Fortryd" (sekundær).
- * Aldrig "OK" — teksten skal sige hvad der sker.
- *
- * Gælder ALLE bredder — også menu-varianten under 1024 px. Friktionen
- * hører i handlingen, ikke i navigationen.
+ * The picker shows all active queues first, then all persons with a
+ * CRM login. A task sent to a queue gets queue_id set and sales_id=null.
+ * A task sent to a person gets sales_id set and queue_id=null.
  */
+
+export interface SendVidereTarget {
+  kind: "queue" | "person";
+  id: number;
+  name: string;
+}
 
 interface SendVidereDialogProps {
   open: boolean;
   onOpenChange: (v: boolean) => void;
-  taskText: string;
-  companyName: string | null;
-  isCovering: boolean;
-  coveredName: string | null;
-  onConfirm: () => void;
-  pending: boolean;
+  taskText: string | null;
+  onSend: (target: SendVidereTarget) => void;
+  sending?: boolean;
+}
+
+interface QueueRow {
+  id: number;
+  name: string;
+}
+
+interface PersonRow {
+  id: number;
+  first_name: string | null;
+  last_name: string | null;
+}
+
+async function fetchTargets(): Promise<{
+  queues: QueueRow[];
+  persons: PersonRow[];
+}> {
+  const supabase = getSupabaseClient();
+  const [qRes, pRes] = await Promise.all([
+    supabase
+      .from("task_queues_lago")
+      .select("id, name")
+      .eq("active", true)
+      .order("name"),
+    supabase
+      .from("sales")
+      .select("id, first_name, last_name")
+      .not("user_id", "is", null)
+      .order("first_name"),
+  ]);
+  if (qRes.error) throw qRes.error;
+  if (pRes.error) throw pRes.error;
+  return {
+    queues: (qRes.data ?? []) as QueueRow[],
+    persons: (pRes.data ?? []) as PersonRow[],
+  };
 }
 
 export function SendVidereDialog({
   open,
   onOpenChange,
   taskText,
-  companyName,
-  isCovering,
-  coveredName,
-  onConfirm,
-  pending,
+  onSend,
+  sending,
 }: SendVidereDialogProps) {
+  const [selected, setSelected] = useState<string>("");
+  const query = useQuery({
+    queryKey: ["lago-send-videre-targets"],
+    queryFn: fetchTargets,
+    enabled: open,
+    staleTime: 60_000,
+  });
+
+  const targets = query.data;
+
+  const handleSend = () => {
+    if (!selected || !targets) return;
+    const [kind, idStr] = selected.split(":");
+    const id = Number(idStr);
+    if (kind === "queue") {
+      const q = targets.queues.find((r) => r.id === id);
+      if (q) onSend({ kind: "queue", id, name: q.name });
+    } else {
+      const p = targets.persons.find((r) => r.id === id);
+      if (p) {
+        const name = [p.first_name, p.last_name].filter(Boolean).join(" ");
+        onSend({ kind: "person", id, name });
+      }
+    }
+  };
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="max-w-sm">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <Icon icon={Send} className="text-[var(--ink)]" />
-            Send videre til kontoret?
-          </DialogTitle>
+          <DialogTitle>Send videre</DialogTitle>
           <DialogDescription>
-            Kontoret overtager opgaven. Den forsvinder fra dine åbne og
-            tilføjes deres liste.
+            {taskText
+              ? `"${taskText.length > 60 ? taskText.slice(0, 60) + "…" : taskText}"`
+              : "Vælg modtager for opgaven."}
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-3 py-2">
-          <div>
-            <div className="text-[13px] font-medium text-[var(--fg-3)] uppercase tracking-wide">
-              Opgave
-            </div>
-            <p className="mt-0.5 line-clamp-4 whitespace-pre-wrap text-sm text-[var(--fg)]">
-              {taskText.trim() || "(uden tekst)"}
-            </p>
+          <div className="space-y-1.5">
+            <Label className="text-sm">Modtager</Label>
+            <Select value={selected} onValueChange={setSelected}>
+              <SelectTrigger className="min-h-11 w-full">
+                <SelectValue placeholder="Vælg kø eller person" />
+              </SelectTrigger>
+              <SelectContent>
+                {targets?.queues.map((q) => (
+                  <SelectItem key={`queue:${q.id}`} value={`queue:${q.id}`}>
+                    {q.name} (kø)
+                  </SelectItem>
+                ))}
+                {(targets?.queues.length ?? 0) > 0 &&
+                  (targets?.persons.length ?? 0) > 0 && (
+                    <div className="my-1 border-t border-[var(--line)]" />
+                  )}
+                {targets?.persons.map((p) => (
+                  <SelectItem key={`person:${p.id}`} value={`person:${p.id}`}>
+                    {[p.first_name, p.last_name].filter(Boolean).join(" ")}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
-          {companyName && (
-            <div>
-              <div className="text-[13px] font-medium text-[var(--fg-3)] uppercase tracking-wide">
-                Kunde
-              </div>
-              <p className="mt-0.5 text-sm text-[var(--fg)]">{companyName}</p>
-            </div>
-          )}
-          {isCovering && coveredName && (
-            <p className="rounded-md bg-[var(--surface-1)] px-3 py-2 text-sm text-[var(--fg-2)]">
-              Dette er {coveredName}s opgave.
-            </p>
-          )}
         </div>
-        <DialogFooter className="flex-row justify-end gap-2 sm:justify-end">
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => onOpenChange(false)}
-            disabled={pending}
-          >
-            Fortryd
+        <DialogFooter>
+          <Button variant="ghost" onClick={() => onOpenChange(false)}>
+            Annullér
           </Button>
-          <Button
-            type="button"
-            onClick={onConfirm}
-            disabled={pending}
-            className="bg-[var(--ink)] font-medium text-white hover:bg-[var(--ink)]/90"
-          >
-            {pending ? "Sender …" : "Send til kontoret"}
+          <Button onClick={handleSend} disabled={!selected || sending}>
+            {sending ? "Sender …" : "Send"}
           </Button>
         </DialogFooter>
       </DialogContent>

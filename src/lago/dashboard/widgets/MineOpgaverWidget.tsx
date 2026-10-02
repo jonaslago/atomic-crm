@@ -31,6 +31,7 @@ import { WidgetShell } from "../WidgetShell";
 import { NyOpgaveKundePicker } from "./NyOpgaveKundePicker";
 import { UdskudTaskDialog } from "./UdskudTaskDialog";
 import { CompactTaskRow } from "./CompactTaskRow";
+import { SendVidereDialog, type SendVidereTarget } from "./SendVidereDialog";
 
 /**
  * Hvad lovede jeg sidst (Domain-brief 34 §1 + tillæg A §1/§6
@@ -303,29 +304,39 @@ export function MineOpgaverWidget() {
   // kontor ved hvad der skete. Opgaven forbliver synlig i den nye
   // "Sendt til kontoret"-sektion nederst — Jonas' 18. sep-regel:
   // "en opgave, der forsvinder, er ikke delegeret. Den er tabt".
+  // §98-5d: handoff now accepts a target (queue or person)
   const handoff = useMutation({
-    mutationFn: async (task: TaskRow) => {
-      // Handoff-markeren skriver ALTID actor-navnet: det er den, der
-      // sender opgaven videre nu. Selvom Simon passer Camilla, er
-      // handoff'en Simons handling.
+    mutationFn: async ({
+      task,
+      target,
+    }: {
+      task: TaskRow;
+      target: SendVidereTarget;
+    }) => {
       if (!actorFullName) throw new Error("Mangler brugerens navn");
       const supabase = getSupabaseClient();
       const currentText = task.text ?? "";
       const marker = formatHandoffMarker(actorFullName);
       const newText = currentText + marker;
+      const update: Record<string, unknown> = { text: newText };
+      if (target.kind === "queue") {
+        update.sales_id = null;
+        update.queue_id = target.id;
+      } else {
+        update.sales_id = target.id;
+        update.queue_id = null;
+      }
       const { error } = await supabase
         .from("tasks")
-        .update({ sales_id: null, text: newText })
+        .update(update)
         .eq("id", task.id);
       if (error) throw error;
-      return { taskId: task.id };
+      return { taskId: task.id, targetName: target.name };
     },
-    onSuccess: () => {
+    onSuccess: (result) => {
       qc.invalidateQueries({ queryKey: ["lago-mine-opgaver", salesId] });
       qc.invalidateQueries({ queryKey: ["lago-sendt-videre", fullName] });
-      toast.success("Sendt til kontoret. Backoffice ser den nu.", {
-        duration: 5000,
-      });
+      toast.success(`Sendt til ${result.targetName}.`, { duration: 5000 });
     },
     onError: (err) =>
       toast.error("Kunne ikke sende opgaven videre", {
@@ -425,12 +436,17 @@ export function MineOpgaverWidget() {
                   taskText={t.text}
                   taskDueDate={t.due_date}
                   onMarkDone={() => markDone.mutate(t.id)}
-                  onHandoff={fullName ? () => handoff.mutate(t) : null}
+                  onHandoff={
+                    fullName
+                      ? (target: SendVidereTarget) =>
+                          handoff.mutate({ task: t, target })
+                      : null
+                  }
                   markDonePending={
                     markDone.isPending && markDone.variables === t.id
                   }
                   handoffPending={
-                    handoff.isPending && handoff.variables?.id === t.id
+                    handoff.isPending && handoff.variables?.task.id === t.id
                   }
                 />
               }
@@ -532,11 +548,12 @@ function TaskActions({
   taskText: string | null;
   taskDueDate: string | null;
   onMarkDone: () => void;
-  onHandoff: (() => void) | null;
+  onHandoff: ((target: SendVidereTarget) => void) | null;
   markDonePending: boolean;
   handoffPending: boolean;
 }) {
   const [udskudOpen, setUdskudOpen] = useState(false);
+  const [sendVidereOpen, setSendVidereOpen] = useState(false);
   // §98-5a: confirmation before marking done
   const [confirmDone, setConfirmDone] = useState(false);
   return (
@@ -580,7 +597,7 @@ function TaskActions({
       {onHandoff && (
         <LagoButton
           variant="secondary"
-          onClick={onHandoff}
+          onClick={() => setSendVidereOpen(true)}
           disabled={handoffPending}
         >
           {handoffPending ? "Sender …" : "Send videre"}
@@ -592,6 +609,17 @@ function TaskActions({
         taskId={taskId}
         taskLabel={taskText?.trim() || "Opgave"}
         currentDueDate={taskDueDate}
+      />
+      {/* §98-5d: Send videre — choose queue or person */}
+      <SendVidereDialog
+        open={sendVidereOpen}
+        onOpenChange={setSendVidereOpen}
+        taskText={taskText}
+        onSend={(target) => {
+          setSendVidereOpen(false);
+          onHandoff?.(target);
+        }}
+        sending={handoffPending}
       />
     </>
   );
