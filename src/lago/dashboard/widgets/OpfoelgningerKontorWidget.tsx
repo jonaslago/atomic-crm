@@ -78,7 +78,9 @@ async function fetchOpfoelgninger(excludeMySalesId: number | null): Promise<{
   if (kontorRes.error) throw kontorRes.error;
   const kontorIds = (kontorRes.data ?? []).map((s: { id: number }) => s.id);
 
-  const orParts: string[] = ["sales_id.is.null"];
+  // §98-5c: queue-based instead of sales_id IS NULL.
+  // Show tasks in ANY queue + tasks assigned to kontor users.
+  const orParts: string[] = ["queue_id.not.is.null"];
   if (kontorIds.length > 0) {
     orParts.push(`sales_id.in.(${kontorIds.join(",")})`);
   }

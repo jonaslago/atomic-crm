@@ -154,7 +154,8 @@ async function fetchSendtVidere(salesFullName: string): Promise<TaskRow[]> {
     .select(
       "id, text, type, due_date, contact_id, contacts(company_id, companies(id, name))",
     )
-    .is("sales_id", null)
+    // §98-5c: queue-based — tasks sent to any queue, not just sales_id=null
+    .not("queue_id", "is", null)
     .is("done_date", null)
     .ilike("text", `%${marker}%`)
     .order("id", { ascending: false })
