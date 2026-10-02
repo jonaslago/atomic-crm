@@ -76,8 +76,7 @@ export function ForslagRettelserWidget() {
   );
 
   const markDone = useMutation({
-    mutationFn: (id: number) =>
-      markSuggestionDone({ id, lukketAf: mySalesId }),
+    mutationFn: (id: number) => markSuggestionDone({ id, lukketAf: mySalesId }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["lago-change-suggestions-open"] });
       toast.success("Forslag markeret som rettet");
@@ -88,7 +87,13 @@ export function ForslagRettelserWidget() {
       }),
   });
 
-  const rows = query.data ?? [];
+  // §93: status suggestions (ophørt) sort first — the consequence is
+  // bigger than a field correction.
+  const rows = [...(query.data ?? [])].sort((a, b) => {
+    const aStatus = a.felt === "status" ? 0 : 1;
+    const bStatus = b.felt === "status" ? 0 : 1;
+    return aStatus - bStatus;
+  });
   const totalCount = rows.length;
 
   return (
@@ -148,7 +153,8 @@ function SuggestionRow({
   onOpen: () => void;
   disabled?: boolean;
 }) {
-  const displayName = suggestion.companyName ?? `Kunde #${suggestion.companyId}`;
+  const displayName =
+    suggestion.companyName ?? `Kunde #${suggestion.companyId}`;
   const authorLine = [
     suggestion.foreslaaetAfNavn,
     shortDateFmt(suggestion.oprettet),

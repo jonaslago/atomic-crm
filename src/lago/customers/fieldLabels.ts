@@ -23,6 +23,8 @@ const LABELS: Record<string, string> = {
   segment: "Segment",
   opening_hours: "Åbningstider",
   debitorinfo: "Debitorinfo",
+  // §93: status is not a field correction — it's a consequence
+  status: "Foreslået ophørt",
 };
 
 const PHONE_FIELDS = new Set(["phone_number"]);

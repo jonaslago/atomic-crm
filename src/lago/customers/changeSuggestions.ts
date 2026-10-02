@@ -8,7 +8,11 @@ import { getSupabaseClient } from "@/components/atomic-crm/providers/supabase/su
  * Alt indenfor tabellen kunde_aendringsforslag_lago.
  */
 
-export type SuggestionStatus = "afventer" | "gennemfoert" | "afvist";
+export type SuggestionStatus =
+  | "afventer"
+  | "gennemfoert"
+  | "afvist"
+  | "bortfaldet";
 export type FeltSource = "companies" | "companies_lago";
 
 export interface ChangeSuggestion {
@@ -53,10 +57,7 @@ interface SupabaseSuggestionRow {
   lukket: string | null;
   lukket_af: number | null;
   lukket_grund: string | null;
-  companies?:
-    | { name: string | null }
-    | Array<{ name: string | null }>
-    | null;
+  companies?: { name: string | null } | Array<{ name: string | null }> | null;
   sales?:
     | { first_name: string | null; last_name: string | null }
     | Array<{ first_name: string | null; last_name: string | null }>

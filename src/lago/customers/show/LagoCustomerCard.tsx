@@ -2,9 +2,11 @@ import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useGetIdentity, useTranslate } from "ra-core";
 import { Link } from "react-router-dom";
-import { MapPin, Pencil, Phone, Plus } from "lucide-react";
+import { AlertTriangle, MapPin, Pencil, Phone, Plus } from "lucide-react";
 
 import { cn } from "@/lib/utils";
+import { useActorSalesId } from "@/lago/portefolje/useActorSalesId";
+import { SuggestCeasedDialog } from "@/lago/customers/SuggestCeasedDialog";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -1809,6 +1811,9 @@ export function StamdataSection({
   const [frekvensOpen, setFrekvensOpen] = useState(false);
   const [saesonlukketOpen, setSaesonlukketOpen] = useState(false);
   const [ringelisteLukOpen, setRingelisteLukOpen] = useState(false);
+  // §93: "Foreslå: kunden er ophørt"
+  const [ceasedOpen, setCeasedOpen] = useState(false);
+  const actorSalesId = useActorSalesId();
   const sellers = useSellerLookup();
   const intervals = useVisitIntervals();
   const { role, salesId: mySalesId } = useCurrentLagoRole();
@@ -2005,6 +2010,15 @@ export function StamdataSection({
             <span className="text-[var(--fg)]">{mangler.join(", ")}</span>
           </p>
         )}
+        {/* §93: "Foreslå: kunden er ophørt" */}
+        <button
+          type="button"
+          onClick={() => setCeasedOpen(true)}
+          className="mt-3 flex items-center gap-1.5 border-t border-[var(--line)] pt-3 text-[length:var(--t-sec)] text-[var(--st-red-fg)] hover:underline"
+        >
+          <Icon icon={AlertTriangle} size="sm" />
+          Foreslå: kunden er ophørt
+        </button>
       </Section>
 
       <DetaljerDialog
@@ -2060,6 +2074,14 @@ export function StamdataSection({
           daysOverdueVedLukning={data.visitPriority?.days_overdue ?? null}
         />
       )}
+      {/* §93: "Foreslå: kunden er ophørt" */}
+      <SuggestCeasedDialog
+        open={ceasedOpen}
+        onOpenChange={setCeasedOpen}
+        companyId={company.id}
+        companyName={company.name}
+        actorSalesId={actorSalesId}
+      />
     </>
   );
 }
