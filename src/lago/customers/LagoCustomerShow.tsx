@@ -26,6 +26,7 @@ import {
   KontaktpersonerSection,
   StamdataSection,
 } from "./show/LagoCustomerCard";
+import { FaktureretSection } from "./show/FaktureretSection";
 
 /**
  * Brief 50 §2 (17. sep 2026) · mobil-header slået sammen til ét bånd.
@@ -264,11 +265,14 @@ function LandscapeZones({ data }: ZoneProps) {
             layout="laptop"
           />
           <AabneOrdrerSection
-              extension={data.extension}
-              companyId={data.company.id}
-              companyName={data.company.name}
-              layout="laptop"
-            />
+            extension={data.extension}
+            companyId={data.company.id}
+            companyName={data.company.name}
+            layout="laptop"
+          />
+          <FaktureretSection
+            vismaCustomerNo={data.extension?.visma_customer_no ?? null}
+          />
         </main>
         <aside className="flex flex-col">
           <OmsaetningSection extension={data.extension} layout="laptop" />
