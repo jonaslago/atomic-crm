@@ -31,6 +31,8 @@ export default defineConfig({
       // værre end en cachet gammel bundle.
       registerType: "prompt",
       workbox: {
+        // §100: push handler imported into the service worker
+        importScripts: ["push-handler.js"],
         globPatterns: ["**/*.{js,css,html,ico,png,svg,woff,woff2}"],
         maximumFileSizeToCacheInBytes: 5 * 1024 * 1024, // 5 MiB
         // Aggressiv opdatering: en ny service-worker skal aktiveres
