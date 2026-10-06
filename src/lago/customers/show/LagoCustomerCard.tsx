@@ -1370,7 +1370,7 @@ export function AabneOrdrerSection({
                         : "bg-[var(--surface-2)] text-[var(--fg-3)]",
                     )}
                   >
-                    Kommentér valgte
+                    Opfølgning på valgte
                   </button>
                 </div>
               </div>
@@ -1542,6 +1542,7 @@ function OrderRow({
   companyId = 0,
   companyName = "",
   contactId = null,
+  opfoelgning = null,
 }: {
   order: OpenOrderSummary;
   open: boolean;
