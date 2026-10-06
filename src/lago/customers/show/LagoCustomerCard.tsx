@@ -12,9 +12,16 @@ import { CompactTaskRow } from "@/lago/dashboard/widgets/CompactTaskRow";
 import { SuggestCeasedDialog } from "@/lago/customers/SuggestCeasedDialog";
 import { FaktureretSection } from "./FaktureretSection";
 import { CustomerLogSection } from "./CustomerLogSection";
-import { fetchOrdreOpfoelgninger } from "./ordreOpfoelgning";
+import {
+  fetchOrdreOpfoelgninger,
+  type OrdreOpfoelgning,
+} from "./ordreOpfoelgning";
 import { OrdreOpfoelgningActions } from "./OrdreOpfoelgningActions";
-import { computeUrgency, type UrgencyColor } from "./ordreUrgency";
+import {
+  computeUrgency,
+  urgencySortKey,
+  type UrgencyColor,
+} from "./ordreUrgency";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -1371,8 +1378,39 @@ export function AabneOrdrerSection({
           })()}
           {/* §38b+c: buckets always open, with explanation in parens. */}
           {BUCKET_ORDER.map((bucketKey) => {
-            const bucketOrders = buckets.get(bucketKey);
-            if (!bucketOrders || bucketOrders.length === 0) return null;
+            const rawBucketOrders = buckets.get(bucketKey);
+            if (!rawBucketOrders || rawBucketOrders.length === 0) return null;
+            // §99-7: sort by urgency (red→green), then oldest first.
+            // Orders with an active future deadline go to the bottom.
+            const bucketOrders = [...rawBucketOrders].sort((a, b) => {
+              const aOp = opfoelgningerMap.get(a.ordre_nr);
+              const bOp = opfoelgningerMap.get(b.ordre_nr);
+              const aUrg = computeUrgency({
+                bucket: toUrgencyBucket(bucketKey),
+                oensketLevering: a.oensketLevering,
+                opfoelgning: aOp
+                  ? {
+                      handling: aOp.handling,
+                      frist: aOp.frist,
+                      status: aOp.status,
+                    }
+                  : null,
+              });
+              const bUrg = computeUrgency({
+                bucket: toUrgencyBucket(bucketKey),
+                oensketLevering: b.oensketLevering,
+                opfoelgning: bOp
+                  ? {
+                      handling: bOp.handling,
+                      frist: bOp.frist,
+                      status: bOp.status,
+                    }
+                  : null,
+              });
+              const urgDiff = urgencySortKey(aUrg) - urgencySortKey(bUrg);
+              if (urgDiff !== 0) return urgDiff;
+              return (a.ordre_dato ?? "").localeCompare(b.ordre_dato ?? "");
+            });
             const bucketSum = bucketOrders.reduce((s, o) => s + o.total, 0);
             const groupAllSelected = bucketOrders.every((o) =>
               selected.has(o.ordre_nr),
@@ -1436,6 +1474,7 @@ export function AabneOrdrerSection({
                         companyId={companyId}
                         companyName={companyName}
                         contactId={firstContactId}
+                        opfoelgning={opfoelgningerMap.get(o.ordre_nr) ?? null}
                       />
                     ))}
                   </RowGroup>
@@ -1515,6 +1554,7 @@ function OrderRow({
   companyId?: number;
   companyName?: string;
   contactId?: number | null;
+  opfoelgning?: OrdreOpfoelgning | null;
 }) {
   const hasLines = o.lines.length > 0;
   // §38a: one-line compact row. Middle column = why it's here.
@@ -1678,6 +1718,32 @@ function OrderRow({
           </div>
         );
       })}
+      {/* §99-6: follow-up trace */}
+      {opfoelgning && (
+        <div className="ml-6 py-1 text-[12px] text-[var(--fg-3)]">
+          {opfoelgning.handling === "sendt_til_saelger" && (
+            <span>
+              ↗ Sendt til sælger · frist {opfoelgning.frist ?? "?"} ·{" "}
+              {dateShort(opfoelgning.oprettet)}
+            </span>
+          )}
+          {opfoelgning.handling === "afventer_visma" && (
+            <span>
+              ◷ Afventer VISMA · frist {opfoelgning.frist ?? "?"} ·{" "}
+              {dateShort(opfoelgning.oprettet)}
+            </span>
+          )}
+          {opfoelgning.handling === "udskudt" && (
+            <span>
+              ⏱ Udskudt til {opfoelgning.frist ?? "?"} ·{" "}
+              {dateShort(opfoelgning.oprettet)}
+            </span>
+          )}
+          {opfoelgning.note && (
+            <span className="ml-1">— {opfoelgning.note}</span>
+          )}
+        </div>
+      )}
       {/* §39d: note block removed — notes interleaved in OrderLines. */}
       {open && hasLines && (
         <>
