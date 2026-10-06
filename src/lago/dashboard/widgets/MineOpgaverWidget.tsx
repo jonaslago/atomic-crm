@@ -31,6 +31,7 @@ import { WidgetShell } from "../WidgetShell";
 import { NyOpgaveKundePicker } from "./NyOpgaveKundePicker";
 import { UdskudTaskDialog } from "./UdskudTaskDialog";
 import { CompactTaskRow } from "./CompactTaskRow";
+import { usePromptPush } from "@/lago/push/usePromptPush";
 import { SendVidereDialog, type SendVidereTarget } from "./SendVidereDialog";
 
 /**
@@ -194,6 +195,7 @@ export function MineOpgaverWidget() {
   // handoff'er nu).
   const fullName = isCovering ? viewLabel : actorFullName;
   const qc = useQueryClient();
+  const promptPush = usePromptPush();
 
   const query = useQuery({
     queryKey: ["lago-mine-opgaver", salesId],
@@ -338,6 +340,8 @@ export function MineOpgaverWidget() {
       qc.invalidateQueries({ queryKey: ["lago-mine-opgaver", salesId] });
       qc.invalidateQueries({ queryKey: ["lago-sendt-videre", fullName] });
       toast.success(`Sendt til ${result.targetName}.`, { duration: 5000 });
+      // §100: prompt for push permission on first action that could notify
+      promptPush();
     },
     onError: (err) =>
       toast.error("Kunne ikke sende opgaven videre", {

@@ -7,6 +7,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { LagoErrorFallback } from "./LagoErrorFallback";
 
 import { useConfigurationLoader } from "@/components/atomic-crm/root/useConfigurationLoader";
+import { IosPwaBanner } from "@/lago/push/IosPwaBanner";
 
 import { LagoHeader } from "./LagoHeader";
 import { LagoScrollRestoration } from "./LagoScrollRestoration";
@@ -56,14 +57,15 @@ export function LagoLayout({ children }: { children: ReactNode }) {
             aktivt ad gangen (gensidigt udelukkende). */}
         <CoverageBanner />
         <RoleViewBanner />
+        <IosPwaBanner />
         <LagoHeader />
         <TestdataBanner />
-      {/* Brief 38 §5 (16. sep 2026): bundpolstring der tager højde for
+        {/* Brief 38 §5 (16. sep 2026): bundpolstring der tager højde for
           iOS Safaris flydende værktøjslinje. `env(safe-area-inset-bottom)`
           er 0 på laptop og ~34 px på iPhone; +1.5rem giver luft så det
           sidste widget-indhold ikke ligger klemt op ad browser-chromen.
           Gælder alle skærme, ikke kun Hjem. */}
-      {/* Brief 54 §2b (17. sep 2026): under 480 px reduceres padding til
+        {/* Brief 54 §2b (17. sep 2026): under 480 px reduceres padding til
           px-2 så mobil-lister får bredden — det er 8 px mindre af 390 =
           16 px ekstra til kundenavnet. Fra 480 px: px-4 som før. */}
         <main
@@ -71,7 +73,9 @@ export function LagoLayout({ children }: { children: ReactNode }) {
           id="main-content"
         >
           <ErrorBoundary FallbackComponent={LagoErrorFallback}>
-            <Suspense fallback={<Skeleton className="h-12 w-12 rounded-full" />}>
+            <Suspense
+              fallback={<Skeleton className="h-12 w-12 rounded-full" />}
+            >
               {isKort ? (
                 <KortPage />
               ) : isSalesDev ? (

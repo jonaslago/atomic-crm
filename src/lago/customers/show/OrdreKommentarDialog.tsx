@@ -20,6 +20,7 @@ import { useActorSalesId } from "@/lago/portefolje/useActorSalesId";
 import { useCurrentLagoRole } from "@/lago/auth/useCurrentLagoRole";
 import { readErrorMessage } from "@/lago/ui/errorMessage";
 import { OrdreOpfoelgningActions } from "./OrdreOpfoelgningActions";
+import { usePromptPush } from "@/lago/push/usePromptPush";
 import {
   createOrdreKommentarer,
   HENSIGT_HINT,
@@ -82,6 +83,7 @@ export function OrdreKommentarDialog({
   const actorSalesId = useActorSalesId();
   const { role } = useCurrentLagoRole();
   const isKontor = role === "kontor" || role === "admin";
+  const promptPush = usePromptPush();
   const qc = useQueryClient();
   const [hensigt, setHensigt] = useState<OrdreKommentarHensigt | null>(null);
   const [aftaltDato, setAftaltDato] = useState<string>("");
@@ -118,6 +120,7 @@ export function OrdreKommentarDialog({
     onSuccess: (rows) => {
       qc.invalidateQueries({ queryKey: ["lago-ordre-kommentarer", companyId] });
       qc.invalidateQueries({ queryKey: ["lago-afventende-ordre-kommentarer"] });
+      promptPush();
       const antalOrdrer = rows.length;
       toast.success(
         antalOrdrer === 1

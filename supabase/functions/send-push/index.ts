@@ -34,6 +34,31 @@ Deno.serve(async (req) => {
     return new Response("Method not allowed", { status: 405 });
   }
 
+  // §100: require service_role key or valid user JWT.
+  // The function must not be callable without authentication.
+  const authHeader = req.headers.get("Authorization");
+  if (!authHeader?.startsWith("Bearer ")) {
+    return new Response(JSON.stringify({ error: "Missing authorization" }), {
+      status: 401,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+  const token = authHeader.slice(7);
+  const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+  if (token !== serviceRoleKey) {
+    // Not service_role — verify it's a valid user JWT via supabaseAdmin
+    const {
+      data: { user },
+      error: authErr,
+    } = await supabaseAdmin.auth.getUser(token);
+    if (authErr || !user) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+  }
+
   try {
     const payload: PushPayload = await req.json();
     if (!payload.recipients?.length || !payload.title) {

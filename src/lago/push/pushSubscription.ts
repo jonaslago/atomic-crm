@@ -13,7 +13,7 @@ import { getSupabaseClient } from "@/components/atomic-crm/providers/supabase/su
 
 // Public VAPID key — safe to embed, it's the public half
 const VAPID_PUBLIC_KEY =
-  "BF32hONseqFVwwVRCbKI8RfoJDA2NgpG_pL5ZHaNbS-DGTG2FFfmjiFN_zfiK5Cb58Zxu7I0bwZ2HIMrZF5v248";
+  "BH5p5WwXZejUwdOt3ACBpdtGx9KB-6gcgkXdd6VqovoCSt2mro6INr6UjdvuyA4gFNe2sb40-Xss6UfI1ecfPLk";
 
 function urlBase64ToUint8Array(base64String: string): Uint8Array {
   const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
