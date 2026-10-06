@@ -13,6 +13,7 @@ import { SuggestCeasedDialog } from "@/lago/customers/SuggestCeasedDialog";
 import { FaktureretSection } from "./FaktureretSection";
 import { CustomerLogSection } from "./CustomerLogSection";
 import { fetchOrdreOpfoelgninger } from "./ordreOpfoelgning";
+import { OrdreOpfoelgningActions } from "./OrdreOpfoelgningActions";
 import { computeUrgency, type UrgencyColor } from "./ordreUrgency";
 import { Button } from "@/components/ui/button";
 import {
@@ -1140,6 +1141,27 @@ export function AabneOrdrerSection({
   });
   const opfoelgningerMap = opfoelgningerQuery.data ?? new Map();
 
+  // §99-5: office actions only for kontor/admin
+  const { role } = useCurrentLagoRole();
+  const isKontor = role === "kontor" || role === "admin";
+  // First contact on this customer (for task creation in send-til-sælger)
+  const contactQuery = useQuery({
+    queryKey: ["lago-first-contact", companyId],
+    queryFn: async () => {
+      const supabase = getSupabaseClient();
+      const { data } = await supabase
+        .from("contacts")
+        .select("id")
+        .eq("company_id", companyId)
+        .limit(1)
+        .maybeSingle();
+      return data?.id ?? null;
+    },
+    enabled: isKontor,
+    staleTime: 60_000,
+  });
+  const firstContactId = contactQuery.data ?? null;
+
   // §20d (30. sep 2026): orders start collapsed. Session-state per
   // customer so toggling survives navigation within a session.
   // sessionStorage key includes companyId so each customer remembers
@@ -1410,6 +1432,10 @@ export function AabneOrdrerSection({
                             };
                           })(),
                         })}
+                        isKontor={isKontor}
+                        companyId={companyId}
+                        companyName={companyName}
+                        contactId={firstContactId}
                       />
                     ))}
                   </RowGroup>
@@ -1473,6 +1499,10 @@ function OrderRow({
   onToggleSelect,
   kommentarer,
   urgency = "neutral",
+  isKontor = false,
+  companyId = 0,
+  companyName = "",
+  contactId = null,
 }: {
   order: OpenOrderSummary;
   open: boolean;
@@ -1481,6 +1511,10 @@ function OrderRow({
   onToggleSelect: () => void;
   kommentarer: OrdreKommentar[];
   urgency?: UrgencyColor;
+  isKontor?: boolean;
+  companyId?: number;
+  companyName?: string;
+  contactId?: number | null;
 }) {
   const hasLines = o.lines.length > 0;
   // §38a: one-line compact row. Middle column = why it's here.
@@ -1646,10 +1680,21 @@ function OrderRow({
       })}
       {/* §39d: note block removed — notes interleaved in OrderLines. */}
       {open && hasLines && (
-        <OrderLines
-          interleavedLines={o.interleavedLines}
-          tillaegOgAfgifter={o.tillaegOgAfgifter}
-        />
+        <>
+          <OrderLines
+            interleavedLines={o.interleavedLines}
+            tillaegOgAfgifter={o.tillaegOgAfgifter}
+          />
+          {/* §99-5: office actions — only kontor/admin */}
+          {isKontor && (
+            <OrdreOpfoelgningActions
+              ordreNr={o.ordre_nr}
+              companyId={companyId}
+              companyName={companyName}
+              contactId={contactId}
+            />
+          )}
+        </>
       )}
     </li>
   );
