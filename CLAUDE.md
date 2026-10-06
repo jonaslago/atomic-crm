@@ -31,7 +31,21 @@ Bash is for building, deploying, running migrations, and system commands only.
 - Failure-path tests (that roll back) are safe in production
 - When something is empty or deleted, say it on the first line — not as a footnote
 
-## 5. Missing values are shown as missing
+## 5. Every new table gets RLS + policy in the same migration
+
+A helper table from a migration inherits no RLS. `CREATE TABLE` +
+`ENABLE ROW LEVEL SECURITY` + `CREATE POLICY` in the same file —
+not afterwards, when Supabase sends a security advisory.
+
+A table without RLS in public is readable and writable by anyone with
+the project URL and the anon key. The repo is public.
+
+## 6. Secrets never appear in terminal output, commits, .env or conversation
+
+Generate → write to file → set via `secrets set` → delete file.
+Never `echo`, never inline in a command, never print. The repo is public.
+
+## 7. Missing values are shown as missing
 
 - `null` fields display as "Ingen frist", "—", or blank — never filled with `new Date()`, `0`, or any computed placeholder that looks like a real value
 - A fallback that appears valid is fabricated data on a screen people act on
