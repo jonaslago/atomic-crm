@@ -12,6 +12,8 @@ import { CompactTaskRow } from "@/lago/dashboard/widgets/CompactTaskRow";
 import { SuggestCeasedDialog } from "@/lago/customers/SuggestCeasedDialog";
 import { FaktureretSection } from "./FaktureretSection";
 import { CustomerLogSection } from "./CustomerLogSection";
+import { fetchOrdreOpfoelgninger } from "./ordreOpfoelgning";
+import { computeUrgency, type UrgencyColor } from "./ordreUrgency";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -1067,6 +1069,25 @@ const BUCKET_HINT: Record<BucketKey, string> = {
   klar: "på lager, intet aftalt",
   en_primeur: "forudbestilt, ikke ankommet",
 };
+// §99: map card bucket to urgency bucket
+function toUrgencyBucket(
+  b: BucketKey,
+): "uafklaret" | "afklaret" | "restordre" | "reservation" | "en_primeur" {
+  switch (b) {
+    case "klar":
+      return "uafklaret";
+    case "aftalt_dato":
+    case "aftalt_mav":
+      return "afklaret";
+    case "afventer":
+      return "restordre";
+    case "reservation":
+      return "reservation";
+    case "en_primeur":
+      return "en_primeur";
+  }
+}
+
 function bucketFor(o: OpenOrderSummary): BucketKey {
   // §32h: first matching rule wins. Date before MAV — when a date is
   // set, the MAV flag is leftover, not a state. An order with both a
@@ -1109,6 +1130,16 @@ export function AabneOrdrerSection({
     }
     return map;
   }, [kommentarerQuery.data]);
+
+  // §99: fetch active follow-ups for all orders
+  const opfoelgningerQuery = useQuery({
+    queryKey: ["lago-ordre-opfoelgninger", companyId],
+    queryFn: () => fetchOrdreOpfoelgninger(orders.map((o) => o.ordre_nr)),
+    enabled: orders.length > 0,
+    staleTime: 30_000,
+  });
+  const opfoelgningerMap = opfoelgningerQuery.data ?? new Map();
+
   // §20d (30. sep 2026): orders start collapsed. Session-state per
   // customer so toggling survives navigation within a session.
   // sessionStorage key includes companyId so each customer remembers
@@ -1366,6 +1397,19 @@ export function AabneOrdrerSection({
                         selected={selected.has(o.ordre_nr)}
                         onToggleSelect={() => toggleSelected(o.ordre_nr)}
                         kommentarer={kommentarerPrOrdre.get(o.ordre_nr) ?? []}
+                        urgency={computeUrgency({
+                          bucket: toUrgencyBucket(bucketFor(o)),
+                          oensketLevering: o.oensketLevering,
+                          opfoelgning: (() => {
+                            const op = opfoelgningerMap.get(o.ordre_nr);
+                            if (!op) return null;
+                            return {
+                              handling: op.handling,
+                              frist: op.frist,
+                              status: op.status,
+                            };
+                          })(),
+                        })}
                       />
                     ))}
                   </RowGroup>
@@ -1414,6 +1458,13 @@ export function AabneOrdrerSection({
  * Ordre-nr står som en reference (fg-3, t-meta) — det er det, sælgeren
  * bruger sidst. Statuschippen og beløbet er højrestillet.
  */
+const URGENCY_DOT: Record<UrgencyColor, string> = {
+  red: "bg-[var(--st-red-fg)]",
+  yellow: "bg-[var(--st-amber-fg)]",
+  neutral: "bg-[var(--fg-3)]",
+  green: "bg-[var(--st-green-fg)]",
+};
+
 function OrderRow({
   order: o,
   open,
@@ -1421,6 +1472,7 @@ function OrderRow({
   selected,
   onToggleSelect,
   kommentarer,
+  urgency = "neutral",
 }: {
   order: OpenOrderSummary;
   open: boolean;
@@ -1428,6 +1480,7 @@ function OrderRow({
   selected: boolean;
   onToggleSelect: () => void;
   kommentarer: OrdreKommentar[];
+  urgency?: UrgencyColor;
 }) {
   const hasLines = o.lines.length > 0;
   // §38a: one-line compact row. Middle column = why it's here.
@@ -1455,6 +1508,14 @@ function OrderRow({
       {/* §38a: compact one-line row. Desktop: three columns.
           Mobile (<768px): two lines. */}
       <div className="flex items-center gap-2 py-2">
+        {/* §99: urgency color dot — read vertically down the list */}
+        <span
+          className={cn(
+            "h-2.5 w-2.5 shrink-0 rounded-full",
+            URGENCY_DOT[urgency],
+          )}
+          title={urgency}
+        />
         <input
           type="checkbox"
           checked={selected}
