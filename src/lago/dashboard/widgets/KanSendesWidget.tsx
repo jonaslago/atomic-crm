@@ -155,10 +155,7 @@ function KanSendesTable({
                   ? "text-[var(--st-amber-fg)]"
                   : "text-[var(--fg-2)]";
             return (
-              <tr
-                key={r.company_id}
-                className="border-t border-[var(--line)]"
-              >
+              <tr key={r.company_id} className="border-t border-[var(--line)]">
                 <td className="py-2 pr-3 text-[var(--fg)]">
                   <div>
                     <Link
@@ -220,7 +217,7 @@ function KanSendesTable({
                     }}
                     className="h-8 bg-[var(--surface-3)] font-medium text-[var(--fg)] hover:bg-[var(--surface-3)]/80"
                   >
-                    Kommentér
+                    Opfølgning
                   </Button>
                 </td>
               </tr>
@@ -263,10 +260,7 @@ function NoteRowInline({ noter }: { noter: OrdreNote[] }) {
               +{rest} mere
             </button>
           </PopoverTrigger>
-          <PopoverContent
-            align="start"
-            className="w-80 space-y-2 text-[13px]"
-          >
+          <PopoverContent align="start" className="w-80 space-y-2 text-[13px]">
             <div className="text-[12px] font-medium text-[var(--fg-2)]">
               Noter fra LAGO
             </div>

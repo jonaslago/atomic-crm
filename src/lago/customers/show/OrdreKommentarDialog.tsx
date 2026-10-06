@@ -17,7 +17,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 
 import { useActorSalesId } from "@/lago/portefolje/useActorSalesId";
+import { useCurrentLagoRole } from "@/lago/auth/useCurrentLagoRole";
 import { readErrorMessage } from "@/lago/ui/errorMessage";
+import { OrdreOpfoelgningActions } from "./OrdreOpfoelgningActions";
 import {
   createOrdreKommentarer,
   HENSIGT_HINT,
@@ -51,6 +53,8 @@ interface OrdreKommentarDialogProps {
   onSaved?: () => void;
   /** §38d: pre-select a hensigt when the dialog opens. */
   defaultHensigt?: OrdreKommentarHensigt | null;
+  /** §99: contact for task creation in "Send til sælger" */
+  contactId?: number | null;
 }
 
 // Brief 89 tillæg A (28. sep 2026): seks hensigter. Rækkefølge er
@@ -73,8 +77,11 @@ export function OrdreKommentarDialog({
   ordreNumre,
   onSaved,
   defaultHensigt,
+  contactId = null,
 }: OrdreKommentarDialogProps) {
   const actorSalesId = useActorSalesId();
+  const { role } = useCurrentLagoRole();
+  const isKontor = role === "kontor" || role === "admin";
   const qc = useQueryClient();
   const [hensigt, setHensigt] = useState<OrdreKommentarHensigt | null>(null);
   const [aftaltDato, setAftaltDato] = useState<string>("");
@@ -140,12 +147,12 @@ export function OrdreKommentarDialog({
         <DialogHeader>
           <DialogTitle>
             {antal === 1
-              ? `Kommentér ordre #${ordreNumre[0]}`
-              : `Kommentér ${antal} ordrer`}
+              ? `Opfølgning — ordre #${ordreNumre[0]}`
+              : `Opfølgning — ${antal} ordrer`}
           </DialogTitle>
           <DialogDescription>
-            {companyName} · Kontoret læser kommentaren og handler i VISMA. Én
-            kommentar pr. ordre, så de kan lukkes hver for sig.
+            {companyName} · Kontoret læser opfølgningen og handler i VISMA. Én
+            opfølgning pr. ordre, så de kan lukkes hver for sig.
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4 py-2">
@@ -219,6 +226,21 @@ export function OrdreKommentarDialog({
               className="text-sm"
             />
           </div>
+
+          {/* §99-5: office actions — only kontor/admin, only single order */}
+          {isKontor && antal === 1 && (
+            <div className="border-t border-[var(--line)] pt-3">
+              <p className="mb-2 text-[13px] font-medium text-[var(--fg-2)]">
+                Kontorets handlinger
+              </p>
+              <OrdreOpfoelgningActions
+                ordreNr={ordreNumre[0]}
+                companyId={companyId}
+                companyName={companyName}
+                contactId={contactId}
+              />
+            </div>
+          )}
 
           {error && <p className="text-sm text-[var(--st-red-fg)]">{error}</p>}
         </div>

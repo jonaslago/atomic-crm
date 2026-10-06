@@ -131,8 +131,8 @@ export const WIDGETS: Record<string, WidgetDefinition> = {
   // Send nu øverst — det er dem der haster. To handlinger pr. række:
   // Udført (status=udfoert) og Luk med begrundelse (status=afvist).
   ordrekommentarer: {
-    title: "Ordrekommentarer",
-    subtitle: "Sælgernes beskeder om åbne ordrer · Send nu øverst",
+    title: "Ordreopfølgninger",
+    subtitle: "Sælgernes opfølgninger på åbne ordrer · Send nu øverst",
     width: "full",
     component: OrdrekommentarerWidget,
   },

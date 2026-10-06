@@ -141,8 +141,8 @@ export function OrdrekommentarerWidget() {
 
   return (
     <WidgetShell
-      title="Ordrekommentarer"
-      subtitle="Sælgernes beskeder om åbne ordrer · Send nu øverst"
+      title="Ordreopfølgninger"
+      subtitle="Sælgernes opfølgninger på åbne ordrer · Send nu øverst"
       isLoading={query.isPending}
       error={query.error as Error | null}
       isEmpty={rows.length === 0}
