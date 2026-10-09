@@ -174,7 +174,7 @@ async function fetchCustomerLog(companyId: number): Promise<LogEntry[]> {
   }>) {
     const who = d.sales
       ? [d.sales.first_name, d.sales.last_name].filter(Boolean).join(" ")
-      : null;
+      : "Systemet";
     entries.push({
       key: `deletion-${d.id}`,
       date: d.slettet,

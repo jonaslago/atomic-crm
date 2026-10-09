@@ -62,6 +62,12 @@ async function sendAlert(subject: string, body: string): Promise<void> {
       toRecipients: recipients.map((email) => ({
         emailAddress: { address: email },
       })),
+      internetMessageHeaders: [
+        {
+          name: "X-Auto-Response-Suppress",
+          value: "All",
+        },
+      ],
     },
     saveToSentItems: false,
   };

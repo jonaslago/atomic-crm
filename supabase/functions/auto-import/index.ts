@@ -118,6 +118,12 @@ async function sendReceiptMail(
       toRecipients: recipients.map((email) => ({
         emailAddress: { address: email },
       })),
+      internetMessageHeaders: [
+        {
+          name: "X-Auto-Response-Suppress",
+          value: "All",
+        },
+      ],
     },
     saveToSentItems: false,
   };
@@ -158,7 +164,7 @@ async function fetchUnreadMails(token: string): Promise<GraphMessage[]> {
     `?$filter=${encodeURIComponent(filter)}` +
     `&$select=id,internetMessageId,subject,receivedDateTime,hasAttachments,from` +
     `&$orderby=receivedDateTime asc` +
-    `&$top=1`; // Process one mail per invocation to stay within memory
+    `&$top=25`; // Scan past non-matching mails to avoid one blocking the queue
   const res = await fetch(url, {
     headers: { Authorization: `Bearer ${token}` },
   });
@@ -327,6 +333,7 @@ Deno.serve(async (req) => {
         JSON.stringify({
           status: "no_new_mail",
           checked: new Date().toISOString(),
+          scanned: allMessages.length,
         }),
         { headers: { "Content-Type": "application/json" } },
       );
@@ -392,7 +399,7 @@ Deno.serve(async (req) => {
         results.push({
           messageId: msg.internetMessageId,
           subject: msg.subject,
-          files: xlsxFiles.map((a) => a.name),
+          files: xlsxMeta.map((a) => a.name),
           status: "skipped",
           detail: "No recognized XLSX files",
         });
@@ -454,6 +461,7 @@ Deno.serve(async (req) => {
           kilde: "auto-import",
           raekker,
           er_testdata: false,
+          koert_at: msg.receivedDateTime,
           note: `msgid:${msg.internetMessageId} · ${detail}`,
         });
         if (error) {
